@@ -52,10 +52,9 @@ async function getDeviceInfo(ip, https) {
       password,
     });
     const raw = config.config || {};
-    console.log('[scan] config reçue de ' + ip + ' :', JSON.stringify(raw).slice(0, 300));
     return {
-      hostname: raw.hostname || raw.sysname || raw.name || null,
-      location: raw.location || (raw.system && raw.system.location) || null,
+      hostname: raw.Switch_Name || raw.hostname || raw.sysname || null,
+      location: raw.Switch_Location || raw.location || null,
     };
   } catch {
     return { hostname: null, location: null };

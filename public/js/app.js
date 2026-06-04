@@ -120,39 +120,64 @@ async function fetchConfig(silent = false) {
     if (!r.ok) throw new Error(await r.text());
     const cfg = await r.json();
 
-    // Debug — vérifier la structure reçue du switch
-    console.group('[fetchConfig] structure reçue');
-    console.log('Clés top-level :', Object.keys(cfg));
-    console.log('cfg.ports :', cfg.ports);
-    console.log('cfg.vlans :', cfg.vlans);
-    console.groupEnd();
-
-    // VLANs — le switch peut retourner un tableau ou un objet indexé
-    if (cfg.vlans) {
-      const vlanList = Array.isArray(cfg.vlans) ? cfg.vlans : Object.values(cfg.vlans);
-      setVlans(vlanList);
-    }
-
     const sw = App.currentSw;
     const pc = getPortCount(sw.model);
 
-    // Ports — essaie les clés "1","2",... puis "port1","port2",...
-    const portsObj = cfg.ports || cfg.port_config || cfg.portConfig || null;
-    if (portsObj && typeof portsObj === 'object') {
-      // Détecte le préfixe éventuel des clés ("port1" → préfixe "port")
-      const sampleKey = Object.keys(portsObj)[0] || '';
-      const prefix    = sampleKey.replace(/\d+$/, '');
+    // ── Format natif Netonix ──────────────────────────────────────────────────
+    // Ports  : cfg.Ports  = tableau [{ Number, Name, Enable, PoE, STP, ... }]
+    // VLANs  : cfg.VLANs  = tableau [{ ID, Name, PortSettings: "TTTUU..." }]
+    //   PortSettings[i] : 'U'=untagged (PVID), 'T'=tagged, autre=absent
 
-      for (let i = 1; i <= pc; i++) {
-        const raw = portsObj[String(i)] || portsObj[prefix + i] || null;
-        let detected = null;
-        try { detected = detectPreset(raw); } catch (err) {
-          console.warn('detectPreset port ' + i + ':', err, raw);
-        }
-        portStates[i]       = raw === null ? null : (detected === null ? 'unknown' : detected);
-        portDescriptions[i] = (raw && raw.description) || '';
-        portRawConfigs[i]   = raw;
+    const portsArray = cfg.Ports  || cfg.ports  || [];
+    const vlansArray = cfg.VLANs  || cfg.vlans  || [];
+
+    // 1. VLANs : afficher le tableau (id + name)
+    if (vlansArray.length) {
+      setVlans(vlansArray.map(function(v) {
+        return { id: parseInt(v.ID || v.id), name: v.Name || v.name || ('VLAN ' + (v.ID || v.id)), subnet: v.subnet || '', desc: v.description || v.desc || v.Name || v.name || '' };
+      }));
+    }
+
+    // 2. Construire la matrice VLAN par port depuis PortSettings
+    //    portVlan[portNum] = { pvid: X, tagged: [Y, Z] }
+    var portVlan = {};
+    for (var i = 1; i <= pc; i++) portVlan[i] = { pvid: null, tagged: [] };
+
+    vlansArray.forEach(function(vlan) {
+      var vlanId   = parseInt(vlan.ID || vlan.id) || 0;
+      var settings = (vlan.PortSettings || vlan.portSettings || '').toUpperCase();
+      for (var j = 0; j < settings.length; j++) {
+        var portNum = j + 1;
+        if (portNum > pc) break;
+        if (!portVlan[portNum]) portVlan[portNum] = { pvid: null, tagged: [] };
+        if (settings[j] === 'U') portVlan[portNum].pvid = vlanId;
+        else if (settings[j] === 'T') portVlan[portNum].tagged.push(vlanId);
       }
+    });
+
+    // 3. Construire portRawConfigs depuis Ports + matrice VLAN
+    if (Array.isArray(portsArray)) {
+      portsArray.forEach(function(portObj) {
+        var portNum = portObj.Number || portObj.number;
+        if (!portNum || portNum > pc) return;
+        var vlanInfo = portVlan[portNum] || { pvid: 1, tagged: [] };
+        var nativePoe = portObj.PoE || portObj.poe || 'Off';
+        var raw = {
+          enabled      : portObj.Enable !== false,
+          poe          : nativePoe === 'Off' ? false : nativePoe.toLowerCase().replace('vh', 'HV'),
+          pvid         : vlanInfo.pvid || 1,
+          tagged       : vlanInfo.tagged,
+          description  : portObj.Name || portObj.name || '',
+          stp          : portObj.STP  || portObj.stp  || false,
+          storm_control: false,
+          qos          : false,
+        };
+        var detected = null;
+        try { detected = detectPreset(raw); } catch (err) { }
+        portStates[portNum]       = raw.enabled === false ? 'disabled' : (detected === null ? 'unknown' : detected);
+        portDescriptions[portNum] = raw.description;
+        portRawConfigs[portNum]   = raw;
+      });
     }
 
     // Détection automatique du modèle
