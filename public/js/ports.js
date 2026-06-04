@@ -87,37 +87,34 @@ function renderPortGrid(count) {
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
 function showPortTooltip(e, i) {
-  const key  = portStates[i];
-  const p    = key === 'unknown' ? PRESET_UNKNOWN : (key ? PRESETS[key] : null);
-  const desc = portDescriptions[i] || '';
-  const tt   = document.getElementById('port-tooltip');
-
-  const p   = key && key !== 'unknown' ? PRESETS[key] : null;
-  const raw = portRawConfigs[i] || null;
-  const cfg = p || raw; // source d'info : preset ou config brute
+  const key    = portStates[i];
+  const preset = key && key !== 'unknown' ? PRESETS[key] : null;
+  const raw    = portRawConfigs[i] || null;
+  const desc   = portDescriptions[i] || '';
+  const tt     = document.getElementById('port-tooltip');
 
   let title;
-  if (p)        title = 'Port ' + i + ' — ' + p.label;
-  else if (raw) title = 'Port ' + i + ' — VLAN ' + (raw.pvid !== undefined ? raw.pvid : 1);
-  else          title = 'Port ' + i + ' — Libre';
+  if (preset)    title = 'Port ' + i + ' — ' + preset.label;
+  else if (raw)  title = 'Port ' + i + ' — VLAN ' + (raw.pvid !== undefined ? raw.pvid : 1);
+  else           title = 'Port ' + i + ' — Libre';
 
-  let html = `<div class="tt-title" style="color:${p ? p.color : (raw ? 'var(--text)' : 'var(--text3)')">${title}</div>`;
+  const titleColor = preset ? preset.color : (raw ? 'var(--text)' : 'var(--text3)');
+  let html = `<div class="tt-title" style="color:${titleColor}">${title}</div>`;
+
+  const cfg = preset || raw;
   if (cfg) {
-    const pvid   = p ? p.pvid   : (raw.pvid !== undefined ? raw.pvid : 1);
-    const tagged = p ? p.tagged : (Array.isArray(raw.tagged) ? raw.tagged : []);
-    const poe    = p ? p.poe    : raw.poe;
+    const pvid   = preset ? preset.pvid   : (raw.pvid !== undefined ? raw.pvid : 1);
+    const tagged = preset ? (preset.tagged || []) : (Array.isArray(raw.tagged) ? raw.tagged : []);
+    const poe    = preset ? preset.poe    : raw.poe;
     html += `<div class="tt-row"><span>VLAN natif</span><b>VLAN ${pvid}</b></div>`;
-    html += `<div class="tt-row"><span>Taggés</span><b>${tagged && tagged.length ? tagged.join(', ') : '—'}</b></div>`;
+    html += `<div class="tt-row"><span>Taggés</span><b>${tagged.length ? tagged.join(', ') : '—'}</b></div>`;
     html += `<div class="tt-row"><span>PoE</span><b>${poe && poe !== false ? poe : 'OFF'}</b></div>`;
-    if (p) {
-      if (p.storm_control) html += `<div class="tt-row"><span>Storm-control</span><b>ON</b></div>`;
-      if (p.stp)           html += `<div class="tt-row"><span>STP portfast</span><b>ON</b></div>`;
-      if (p.qos)           html += `<div class="tt-row"><span>QoS DSCP</span><b>ON</b></div>`;
-    } else if (raw) {
-      if (raw.storm_control) html += `<div class="tt-row"><span>Storm-control</span><b>ON</b></div>`;
-      if (raw.stp)           html += `<div class="tt-row"><span>STP portfast</span><b>ON</b></div>`;
-      if (raw.qos)           html += `<div class="tt-row"><span>QoS DSCP</span><b>ON</b></div>`;
-    }
+    const sc  = preset ? preset.storm_control : (raw && raw.storm_control);
+    const stp = preset ? preset.stp           : (raw && raw.stp);
+    const qos = preset ? preset.qos           : (raw && raw.qos);
+    if (sc)  html += `<div class="tt-row"><span>Storm-control</span><b>ON</b></div>`;
+    if (stp) html += `<div class="tt-row"><span>STP portfast</span><b>ON</b></div>`;
+    if (qos) html += `<div class="tt-row"><span>QoS DSCP</span><b>ON</b></div>`;
   }
   if (desc) html += `<div class="tt-desc">${desc}</div>`;
   tt.innerHTML = html;
