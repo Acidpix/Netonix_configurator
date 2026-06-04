@@ -263,7 +263,7 @@
 
 <!-- ── Modal édition preset VLAN ── -->
 <div class="modal-bg" id="modal-vlan-preset">
-  <div class="modal" style="width:560px;max-height:80vh;display:flex;flex-direction:column">
+  <div class="modal" style="width:640px;max-height:85vh;display:flex;flex-direction:column">
     <div class="modal-title" id="vlan-preset-modal-title">Nouveau preset VLAN</div>
     <div style="overflow-y:auto;flex:1">
       <div class="modal-row">
@@ -272,13 +272,25 @@
       </div>
       <div class="modal-row">
         <div class="field"><label>Description</label><input id="vpm-desc" placeholder="Description du preset" /></div>
-        <div class="field"><label>Couleur (CSS var)</label><input id="vpm-color" placeholder="var(--accent)" value="var(--text2)" /></div>
+        <div class="field"><label>Couleur</label><input id="vpm-color" placeholder="var(--accent)" value="var(--text2)" /></div>
       </div>
-      <div class="field" style="margin-bottom:12px">
-        <label>VLANs (JSON)</label>
-        <textarea id="vpm-vlans" style="font-family:var(--mono);font-size:11px;min-height:200px;padding:8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);resize:vertical" placeholder='[{"id":1,"name":"Management","subnet":"192.168.1.0/24","desc":"Gestion"}]'></textarea>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">Chaque VLAN doit avoir : id, name, subnet (optionnel), desc (optionnel)</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <label style="font-size:11px;color:var(--text2);font-weight:600">Table des VLANs</label>
+        <button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="vpmAddVlan()">＋ Ajouter</button>
       </div>
+      <table class="vlan-tbl" style="margin-bottom:4px">
+        <thead>
+          <tr>
+            <th style="width:70px">ID</th>
+            <th>Nom</th>
+            <th>Subnet</th>
+            <th>Description</th>
+            <th style="width:32px"></th>
+          </tr>
+        </thead>
+        <tbody id="vpm-vlan-tbody"></tbody>
+      </table>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Même format que la table VLANs du switch</div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeVlanPresetModal()">Annuler</button>
@@ -341,9 +353,10 @@
       <input id="scan-subnet" placeholder="192.168.1.0/24"
         onkeydown="if(event.key==='Enter') startScan()" />
     </div>
-    <div id="scan-results"></div>
+    <div id="scan-results" style="max-height:340px;overflow-y:auto"></div>
     <div class="modal-actions" style="margin-top:12px">
       <button class="btn btn-ghost"   onclick="closeScan()">Fermer</button>
+      <button class="btn btn-ghost"   id="btn-scan-add" onclick="addScannedSwitches()" style="display:none">Ajouter la sélection</button>
       <button class="btn btn-primary" id="btn-scan-start" onclick="startScan()">Scanner</button>
     </div>
   </div>

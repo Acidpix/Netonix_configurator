@@ -41,14 +41,16 @@ function renderPresetButtons() {
   });
 }
 
-// Heuristique : devine le preset d'un port depuis sa config JSON Netonix
+// Compare la config d'un port contre les presets chargés dynamiquement
 function detectPreset(portCfg) {
   if (!portCfg || portCfg.enabled === false) return 'disabled';
-  const { pvid = 1, tagged = [] } = portCfg;
-  if (tagged.length > 3) return 'ap';
-  if (tagged.length > 0) return 'uplink';
-  if (pvid === 30)        return 'cam';
-  if (pvid === 40)        return 'voip';
-  if (pvid === 20)        return 'server';
+  const portPvid   = portCfg.pvid ?? 1;
+  const portTagged = (portCfg.tagged || []).slice().sort((a, b) => a - b);
+
+  for (const [key, p] of Object.entries(PRESETS)) {
+    if (p.pvid !== portPvid) continue;
+    const presetTagged = (p.tagged || []).slice().sort((a, b) => a - b);
+    if (JSON.stringify(presetTagged) === JSON.stringify(portTagged)) return key;
+  }
   return null;
 }

@@ -126,9 +126,11 @@ async function fetchConfig(silent = false) {
     const pc = getPortCount(sw.model);
     if (cfg.ports) {
       for (let i = 1; i <= pc; i++) {
-        const detected = detectPreset(cfg.ports[String(i)]);
+        const raw = cfg.ports[String(i)];
+        const detected = detectPreset(raw);
         portStates[i]       = detected === null ? 'unknown' : detected;
-        portDescriptions[i] = cfg.ports[String(i)]?.description || '';
+        portDescriptions[i] = raw?.description || '';
+        portRawConfigs[i]   = raw || null;
       }
     }
 
@@ -545,6 +547,40 @@ async function loadSettingsVlanPresets() {
   } catch (e) { console.error(e); }
 }
 
+let _vpmVlans = [];
+
+function vpmRenderTable() {
+  const tbody = document.getElementById('vpm-vlan-tbody');
+  tbody.innerHTML = '';
+  _vpmVlans.forEach((v, idx) => {
+    const color = VLAN_COLORS[idx % VLAN_COLORS.length];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="vlan-dot" style="background:${color}"></div>
+          <input type="number" value="${v.id}" style="width:52px" onchange="_vpmVlans[${idx}].id=+this.value" />
+        </div>
+      </td>
+      <td><input type="text" value="${v.name}"          onchange="_vpmVlans[${idx}].name=this.value" /></td>
+      <td><input type="text" value="${v.subnet||''}"    placeholder="10.0.x.0/24" onchange="_vpmVlans[${idx}].subnet=this.value" /></td>
+      <td><input type="text" value="${v.desc||''}"      placeholder="Description"  onchange="_vpmVlans[${idx}].desc=this.value" /></td>
+      <td><button class="btn btn-danger" style="padding:3px 7px;font-size:11px" onclick="vpmRemoveVlan(${idx})">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function vpmAddVlan() {
+  _vpmVlans.push({ id: 100 + _vpmVlans.length, name: 'Nouveau', subnet: '', desc: '' });
+  vpmRenderTable();
+}
+
+function vpmRemoveVlan(idx) {
+  _vpmVlans.splice(idx, 1);
+  vpmRenderTable();
+}
+
 async function openVlanPresetModal(key) {
   _editVlanPresetKey = key || null;
   const isNew = !key;
@@ -555,45 +591,39 @@ async function openVlanPresetModal(key) {
     const list = await r.json();
     const vp = list.find(x => x.key === key);
     if (!vp) return;
-    document.getElementById('vpm-key').value          = vp.key;
-    document.getElementById('vpm-key').disabled       = true;
-    document.getElementById('vpm-label').value        = vp.label;
-    document.getElementById('vpm-desc').value         = vp.description;
-    document.getElementById('vpm-color').value        = vp.color;
-    document.getElementById('vpm-vlans').value        = JSON.stringify(vp.vlans, null, 2);
+    document.getElementById('vpm-key').value     = vp.key;
+    document.getElementById('vpm-key').disabled  = true;
+    document.getElementById('vpm-label').value   = vp.label;
+    document.getElementById('vpm-desc').value    = vp.description;
+    document.getElementById('vpm-color').value   = vp.color;
+    _vpmVlans = JSON.parse(JSON.stringify(vp.vlans || []));
   } else {
-    document.getElementById('vpm-key').value          = '';
-    document.getElementById('vpm-key').disabled       = false;
-    document.getElementById('vpm-label').value        = '';
-    document.getElementById('vpm-desc').value         = '';
-    document.getElementById('vpm-color').value        = 'var(--text2)';
-    document.getElementById('vpm-vlans').value        = '[]';
+    document.getElementById('vpm-key').value     = '';
+    document.getElementById('vpm-key').disabled  = false;
+    document.getElementById('vpm-label').value   = '';
+    document.getElementById('vpm-desc').value    = '';
+    document.getElementById('vpm-color').value   = 'var(--text2)';
+    _vpmVlans = [];
   }
+  vpmRenderTable();
   document.getElementById('modal-vlan-preset').classList.add('open');
 }
 
 function closeVlanPresetModal() {
   document.getElementById('modal-vlan-preset').classList.remove('open');
   _editVlanPresetKey = null;
+  _vpmVlans = [];
 }
 
 async function saveVlanPreset() {
   const key = _editVlanPresetKey || document.getElementById('vpm-key').value.trim();
   if (!key) return toast('Clé preset requise', 'err');
 
-  let vlans;
-  try {
-    vlans = JSON.parse(document.getElementById('vpm-vlans').value || '[]');
-    if (!Array.isArray(vlans)) throw new Error('Doit être un tableau');
-  } catch (e) {
-    return toast(`Erreur JSON VLANs: ${e.message}`, 'err');
-  }
-
   const data = {
     key,
     label      : document.getElementById('vpm-label').value.trim(),
     description: document.getElementById('vpm-desc').value.trim(),
-    vlans,
+    vlans      : _vpmVlans,
     color      : document.getElementById('vpm-color').value.trim() || 'var(--text2)',
   };
 
@@ -641,6 +671,7 @@ async function startScan() {
   btn.disabled = true;
   btn.textContent = 'Scan en cours…';
   document.getElementById('scan-results').innerHTML = '<div style="color:var(--text3);font-size:12px">Scan en cours, veuillez patienter…</div>';
+  document.getElementById('btn-scan-add').style.display = 'none';
 
   try {
     const r = await fetch('/api/scan', {
@@ -650,23 +681,37 @@ async function startScan() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
 
+    const existingIps = new Set((App.switches || []).map(s => s.ip));
+    const newFound = d.found.filter(f => !existingIps.has(f.ip));
+    const skipped  = d.found.length - newFound.length;
+
     const res = document.getElementById('scan-results');
-    if (!d.found.length) {
-      res.innerHTML = `<div style="color:var(--text3);font-size:12px">${d.scanned} hôtes scannés — aucun appareil trouvé.</div>`;
+    if (!newFound.length) {
+      const msg = d.found.length === 0
+        ? `${d.scanned} hôtes scannés — aucun appareil trouvé.`
+        : `${d.scanned} hôtes scannés — tous les appareils trouvés sont déjà dans la liste.`;
+      res.innerHTML = `<div style="color:var(--text3);font-size:12px">${msg}</div>`;
     } else {
-      res.innerHTML = `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${d.found.length} appareil(s) trouvé(s) sur ${d.scanned} hôtes :</div>` +
-        d.found.map(({ ip, https, hostname, location }) => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-            <div>
-              <span style="font-family:var(--mono);font-size:12px">${ip}</span>
-              <span style="font-size:10px;color:var(--text3);margin-left:8px">${https ? 'HTTPS' : 'HTTP'}</span>
-              ${hostname ? `<div style="font-size:10px;color:var(--text2)">${hostname}</div>` : ''}
-              ${location ? `<div style="font-size:10px;color:var(--text3)">${location}</div>` : ''}
+      const skipNote = skipped ? `<span style="color:var(--text3)"> (${skipped} déjà présent${skipped > 1 ? 's' : ''})</span>` : '';
+      res.innerHTML = `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${newFound.length} appareil(s) nouveaux sur ${d.scanned} hôtes${skipNote} :</div>` +
+        newFound.map(({ ip, https, hostname, location }) => `
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+            <input type="checkbox" class="scan-chk" data-ip="${ip}" data-https="${https}"
+              data-location="${(location || '').replace(/"/g, '&quot;')}"
+              style="width:auto;flex-shrink:0" checked />
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-family:var(--mono);font-size:12px">${ip}</span>
+                <span style="font-size:10px;color:var(--text3)">${https ? 'HTTPS' : 'HTTP'}</span>
+              </div>
+              <input class="scan-name" data-ip="${ip}"
+                value="${(hostname || '').replace(/"/g, '&quot;')}"
+                placeholder="Nom du switch"
+                style="margin-top:4px;padding:2px 6px;font-size:11px;width:100%;box-sizing:border-box" />
             </div>
-            <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px"
-              onclick="preFillAdd('${ip}', ${https}, '${hostname || ''}', '${location || ''}'); closeScan();">Ajouter</button>
           </div>
         `).join('');
+      document.getElementById('btn-scan-add').style.display = '';
     }
   } catch (e) {
     toast('Erreur scan : ' + e.message, 'err');
@@ -674,6 +719,51 @@ async function startScan() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Scanner';
+  }
+}
+
+async function addScannedSwitches() {
+  const checks = [...document.querySelectorAll('.scan-chk:checked')];
+  if (!checks.length) return toast('Aucun switch sélectionné', 'err');
+
+  let settings = { scan_default_username: 'admin', scan_default_password: 'netonix' };
+  try {
+    const sr = await fetch('/api/settings');
+    if (sr.ok) settings = await sr.json();
+  } catch {}
+
+  const entries = checks.map(chk => {
+    const ip       = chk.dataset.ip;
+    const nameInput = document.querySelector(`.scan-name[data-ip="${ip}"]`);
+    return {
+      ip,
+      https   : chk.dataset.https === 'true',
+      location: chk.dataset.location || '',
+      name    : (nameInput && nameInput.value.trim()) || ip,
+      username: settings.scan_default_username || 'admin',
+      password: settings.scan_default_password || 'netonix',
+    };
+  });
+
+  let added = 0, errors = 0;
+  for (const e of entries) {
+    try {
+      const r = await fetch('/api/switches', {
+        method : 'POST', headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify(e),
+      });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error); }
+      added++;
+    } catch (err) {
+      errors++;
+      toast(`Erreur ajout ${e.ip} : ${err.message}`, 'err');
+    }
+  }
+
+  if (added) {
+    toast(`${added} switch${added > 1 ? 's ajoutés' : ' ajouté'}`, 'ok');
+    await loadSwitches();
+    closeScan();
   }
 }
 

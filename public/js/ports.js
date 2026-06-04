@@ -4,6 +4,7 @@ let MODEL_PORTS = {};   // { key: portCount } — chargé depuis /api/models
 
 let portStates       = {};  // { portNum: presetKey | 'unknown' | null }
 let portDescriptions = {};  // { portNum: string }
+let portRawConfigs   = {};  // { portNum: rawPortCfg } — config brute du switch
 let selectedPorts    = new Set();
 
 let _pendingPresetKey = null; // stocke la clé en attente de confirmation
@@ -82,6 +83,13 @@ function showPortTooltip(e, i) {
     if (p.storm_control) html += `<div class="tt-row"><span>Storm-control</span><b>ON</b></div>`;
     if (p.stp)           html += `<div class="tt-row"><span>STP portfast</span><b>ON</b></div>`;
     if (p.qos)           html += `<div class="tt-row"><span>QoS DSCP</span><b>ON</b></div>`;
+  } else if (key === 'unknown') {
+    const raw = portRawConfigs[i];
+    if (raw) {
+      html += `<div class="tt-row"><span>VLAN natif</span><b>VLAN ${raw.pvid ?? 1}</b></div>`;
+      html += `<div class="tt-row"><span>Taggés</span><b>${raw.tagged && raw.tagged.length ? raw.tagged.join(', ') : '—'}</b></div>`;
+      html += `<div class="tt-row"><span>PoE</span><b>${raw.poe && raw.poe !== false ? raw.poe : 'OFF'}</b></div>`;
+    }
   }
   if (desc) html += `<div class="tt-desc">${desc}</div>`;
   tt.innerHTML = html;
@@ -224,7 +232,20 @@ function showPortDetail(key, ports) {
     <div class="detail-row"><span class="dl">VLAN natif (PVID)</span><span class="dv">VLAN ${p.pvid}</span></div>
     <div class="detail-row"><span class="dl">VLANs taggés</span><span class="dv">${p.tagged && p.tagged.length ? p.tagged.map(v => 'VLAN ' + v).join(', ') : '—'}</span></div>
     <div class="detail-row"><span class="dl">PoE</span><span class="dv" style="color:${p.poe && p.poe !== false ? 'var(--green)' : 'var(--text3)'}">${p.poe && p.poe !== false ? p.poe : 'OFF'}</span></div>
-    ` : '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Configuration non reconnue comme preset standard.</div>'}
+    ` : (() => {
+      const raw = singlePort ? portRawConfigs[singlePort] : null;
+      if (!raw) return '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Configuration non reconnue comme preset standard.</div>';
+      const tagged = raw.tagged && raw.tagged.length ? raw.tagged.map(v => 'VLAN ' + v).join(', ') : '—';
+      return `
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Configuration personnalisée (hors preset)</div>
+        <div class="detail-row"><span class="dl">VLAN natif (PVID)</span><span class="dv">VLAN ${raw.pvid ?? 1}</span></div>
+        <div class="detail-row"><span class="dl">VLANs taggés</span><span class="dv">${tagged}</span></div>
+        <div class="detail-row"><span class="dl">PoE</span><span class="dv" style="color:${raw.poe && raw.poe !== false ? 'var(--green)' : 'var(--text3)'}">${raw.poe && raw.poe !== false ? raw.poe : 'OFF'}</span></div>
+        ${raw.storm_control ? '<div class="detail-row"><span class="dl">Storm-control</span><span class="dv">ON</span></div>' : ''}
+        ${raw.stp ? '<div class="detail-row"><span class="dl">STP portfast</span><span class="dv">ON</span></div>' : ''}
+        ${raw.qos ? '<div class="detail-row"><span class="dl">QoS DSCP</span><span class="dv">ON</span></div>' : ''}
+      `;
+    })()}
     ${singlePort !== null ? `
     <div class="detail-row" style="border:none;margin-top:6px">
       <span class="dl">Description</span>
@@ -316,6 +337,7 @@ function renderPortLegend() {
 function resetPortStates() {
   portStates       = {};
   portDescriptions = {};
+  portRawConfigs   = {};
   selectedPorts.clear();
 }
 
