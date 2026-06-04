@@ -52,8 +52,8 @@ async function getDeviceInfo(ip, https) {
       password,
     });
     return {
-      hostname: config.config?.hostname || null,
-      location: config.config?.location || null,
+      hostname: (config.config && config.config.hostname) || null,
+      location: (config.config && config.config.location) || null,
     };
   } catch {
     return { hostname: null, location: null };
