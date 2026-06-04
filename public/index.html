@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Netonix Manager</title>
+<link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">N</div>
+    <div>
+      <div class="sidebar-title">Netonix Manager</div>
+      <div class="sidebar-subtitle" id="sw-count">…</div>
+    </div>
+  </div>
+  <div id="sw-list"></div>
+  <button class="btn-add-sw" onclick="openAddModal()">＋ Ajouter un switch</button>
+</div>
+
+<!-- ── Main ── -->
+<div id="main">
+
+  <!-- Topbar -->
+  <div id="topbar">
+    <div>
+      <div class="topbar-name" id="tb-name">Sélectionnez un switch</div>
+      <div class="topbar-ip"   id="tb-ip">—</div>
+    </div>
+    <span class="topbar-badge" id="tb-status"></span>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost"   id="btn-fetch" onclick="fetchConfig()"   disabled>↓ Récupérer config</button>
+    <button class="btn btn-amber"   id="btn-reset" onclick="confirmReset()"  disabled>↺ Reset propre</button>
+    <button class="btn btn-primary" id="btn-push"  onclick="pushConfig()"   disabled>↑ Pousser config</button>
+    <button class="btn btn-ghost"   id="btn-edit"  onclick="openEditModal()" disabled style="padding:6px 8px" title="Modifier">⚙</button>
+    <button class="btn btn-danger"  id="btn-del"   onclick="deleteSwitch()"  disabled style="padding:6px 8px" title="Supprimer">✕</button>
+  </div>
+
+  <!-- Tabs -->
+  <div id="tabs">
+    <div class="tab active"  onclick="showTab('ports')">Ports</div>
+    <div class="tab"         onclick="showTab('vlans')">VLANs</div>
+    <div class="tab"         onclick="showTab('raw')">Config brute</div>
+  </div>
+
+  <!-- Content -->
+  <div id="content">
+
+    <!-- Ports tab -->
+    <div class="tab-pane active" id="pane-ports">
+      <div class="empty" id="empty-state">
+        <div class="ei">🔌</div>
+        <div>Sélectionnez un switch dans la liste</div>
+        <div style="font-size:11px">ou ajoutez-en un avec le bouton ci-dessous à gauche</div>
+      </div>
+
+      <div id="ports-section" style="display:none">
+        <div class="row2" style="align-items:start">
+
+          <!-- Grille de ports -->
+          <div>
+            <div class="card">
+              <div class="card-title">Ports</div>
+              <div id="port-grid"></div>
+              <div style="margin-top:10px;font-size:11px;color:var(--text3)">
+                Clic gauche : sélectionner · Clic droit : tout désélectionner
+              </div>
+            </div>
+            <div id="detail-panel"></div>
+          </div>
+
+          <!-- Presets + légende -->
+          <div>
+            <div class="card">
+              <div class="card-title">Presets</div>
+              <div class="preset-grid">
+                <button class="preset-btn preset-cam"     onclick="applyPreset('cam')">    <span class="pi">📷</span>Caméra IP</button>
+                <button class="preset-btn preset-ap"      onclick="applyPreset('ap')">     <span class="pi">📡</span>AP WiFi</button>
+                <button class="preset-btn preset-uplink"  onclick="applyPreset('uplink')"> <span class="pi">⬆️</span>Uplink</button>
+                <button class="preset-btn preset-voip"    onclick="applyPreset('voip')">   <span class="pi">📞</span>VoIP</button>
+                <button class="preset-btn preset-server"  onclick="applyPreset('server')"> <span class="pi">🖥</span>Serveur</button>
+                <button class="preset-btn preset-disabled" onclick="applyPreset('disabled')"><span class="pi">🚫</span>Désactivé</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">Résumé</div>
+              <div id="port-legend" style="display:flex;flex-direction:column;gap:6px"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- VLANs tab -->
+    <div class="tab-pane" id="pane-vlans">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="card-title" style="margin:0">Table des VLANs</div>
+          <button class="btn btn-ghost" onclick="addVlan()" style="font-size:11px">＋ Ajouter</button>
+        </div>
+        <table class="vlan-tbl">
+          <thead>
+            <tr>
+              <th style="width:80px">ID</th>
+              <th>Nom</th>
+              <th>Subnet</th>
+              <th>Description</th>
+              <th style="width:36px"></th>
+            </tr>
+          </thead>
+          <tbody id="vlan-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Raw tab -->
+    <div class="tab-pane" id="pane-raw">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="card-title" style="margin:0">Configuration JSON brute</div>
+          <button class="btn btn-ghost" onclick="copyRaw()" style="font-size:11px">📋 Copier</button>
+        </div>
+        <pre id="raw-config">Récupérez d'abord la configuration du switch.</pre>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ── Modal ajout/édition switch ── -->
+<div class="modal-bg" id="modal-sw">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Ajouter un switch</div>
+    <div class="modal-row">
+      <div class="field"><label>Nom *</label>         <input id="f-name"  placeholder="SW-CORE-01" /></div>
+      <div class="field"><label>Adresse IP *</label>  <input id="f-ip"    placeholder="192.168.1.1" /></div>
+    </div>
+    <div class="modal-row">
+      <div class="field"><label>Utilisateur *</label> <input id="f-user"  placeholder="admin" /></div>
+      <div class="field"><label>Mot de passe *</label><input id="f-pass"  type="password" placeholder="••••••" /></div>
+    </div>
+    <div class="modal-row">
+      <div class="field"><label>Groupe</label>        <input id="f-group" placeholder="Site principal" /></div>
+      <div class="field"><label>Modèle</label>
+        <select id="f-model">
+          <option value="WS-8">WS-8-150W  (8 ports)</option>
+          <option value="WS-12" selected>WS-12-250W (12 ports)</option>
+          <option value="WS-26">WS-26-500W (26 ports)</option>
+          <option value="WISP-12">WISP-12-MINI (12 ports)</option>
+          <option value="WISP-16">WISP-16 (16 ports)</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-row full">
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="f-https" style="width:auto" checked />
+          Connexion HTTPS (recommandé, certificats auto-signés acceptés)
+        </label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost"   onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="btn-save-sw" onclick="saveSwitch()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toasts ── -->
+<div id="toast"></div>
+
+<!-- ── Scripts (ordre important : presets → ui → ports → vlans → app) ── -->
+<script src="/js/presets.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/ports.js"></script>
+<script src="/js/vlans.js"></script>
+<script src="/js/app.js"></script>
+
+</body>
+</html>

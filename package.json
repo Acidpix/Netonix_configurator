@@ -1,0 +1,19 @@
+{
+  "name": "netonix-manager",
+  "version": "1.0.0",
+  "description": "Interface web de gestion multi-switch Netonix — récupération et push de config via API REST",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
+  },
+  "keywords": ["netonix", "switch", "network", "management"],
+  "license": "MIT"
+}
