@@ -53,15 +53,15 @@ function update(id, patch) {
   db.prepare(
     'UPDATE switches SET name=?,ip=?,username=?,password=?,group_name=?,model=?,https=?,location=?,snmp_location=? WHERE id=?'
   ).run(
-    patch.name          ?? cur.name,
-    patch.ip            ?? cur.ip,
-    patch.username      ?? cur.username,
+    (patch.name !== undefined && patch.name !== null) ? patch.name : cur.name,
+    (patch.ip !== undefined && patch.ip !== null) ? patch.ip : cur.ip,
+    (patch.username !== undefined && patch.username !== null) ? patch.username : cur.username,
     password,
-    patch.group         ?? cur.group_name,
-    patch.model         ?? cur.model,
+    (patch.group !== undefined && patch.group !== null) ? patch.group : cur.group_name,
+    (patch.model !== undefined && patch.model !== null) ? patch.model : cur.model,
     patch.https !== undefined ? (patch.https !== false ? 1 : 0) : cur.https,
-    patch.location      ?? cur.location,
-    patch.snmp_location ?? cur.snmp_location,
+    (patch.location !== undefined && patch.location !== null) ? patch.location : cur.location,
+    (patch.snmp_location !== undefined && patch.snmp_location !== null) ? patch.snmp_location : cur.snmp_location,
     id
   );
   return findById(id);
