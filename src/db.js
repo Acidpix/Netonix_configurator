@@ -48,6 +48,20 @@ db.exec(`
     port_count INTEGER NOT NULL,
     builtin    INTEGER NOT NULL DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS vlan_presets (
+    key         TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    vlans       TEXT NOT NULL DEFAULT '[]',
+    color       TEXT NOT NULL DEFAULT 'var(--text2)',
+    builtin     INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 // ── Seed switch_models ────────────────────────────────────────────────────────
@@ -64,6 +78,17 @@ const stmtModel = db.prepare(
 );
 for (const m of seedModels) stmtModel.run(m.key, m.label, m.port_count, m.builtin);
 
+// ── Seed vlan_presets ─────────────────────────────────────────────────────────
+const seedVlanPresets = [
+  { key: 'standard', label: 'Réseau standard', description: 'Configuration VLAN standard avec 6 VLANs', vlans: '[{"id":1,"name":"Management","subnet":"192.168.1.0/24","desc":"Gestion switches"},{"id":10,"name":"LAN","subnet":"10.0.10.0/24","desc":"Réseau local"},{"id":20,"name":"Serveurs","subnet":"10.0.20.0/24","desc":"Infra / NAS"},{"id":30,"name":"Cameras","subnet":"10.0.30.0/24","desc":"Vidéosurveillance"},{"id":40,"name":"VoIP","subnet":"10.0.40.0/24","desc":"Téléphonie IP"},{"id":50,"name":"IoT","subnet":"10.0.50.0/24","desc":"Objets connectés"}]', color: 'var(--text2)', builtin: 1 },
+];
+const stmtVlanPreset = db.prepare(
+  'INSERT OR IGNORE INTO vlan_presets (key,label,description,vlans,color,builtin) VALUES (?,?,?,?,?,?)'
+);
+for (const vp of seedVlanPresets) {
+  stmtVlanPreset.run(vp.key, vp.label, vp.description, vp.vlans, vp.color, vp.builtin);
+}
+
 // ── Seed presets ──────────────────────────────────────────────────────────────
 const seedPresets = [
   { key: 'cam',      label: 'Caméra IP',      pvid: 30, tagged: '[]',               poe: '48v',   enabled: 1, storm_control: 1, stp: 1, qos: 0, description: 'IP Camera',         color: 'var(--pink)',   cls: 'p-cam'      },
@@ -79,6 +104,12 @@ const stmtPreset = db.prepare(
 for (const p of seedPresets) {
   stmtPreset.run(p.key, p.label, p.pvid, p.tagged, p.poe, p.enabled, p.storm_control, p.stp, p.qos, p.description, p.color, p.cls);
 }
+
+// ── Seed settings ─────────────────────────────────────────────────────────────
+const { DEFAULT_USERNAME, DEFAULT_PASSWORD } = require('./config');
+const stmtSetting = db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)');
+stmtSetting.run('scan_default_username', DEFAULT_USERNAME);
+stmtSetting.run('scan_default_password', DEFAULT_PASSWORD);
 
 // ── Migration depuis switches.json ────────────────────────────────────────────
 if (fs.existsSync(DATA_FILE)) {

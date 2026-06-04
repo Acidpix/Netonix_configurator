@@ -7,13 +7,15 @@ try { require('fs').readFileSync('.env', 'utf8').split('\n').forEach(line => {
     process.env[k.trim()] = v.join('=').trim();
 }); } catch {}
 
-const express       = require('express');
-const path          = require('path');
-const { PORT }      = require('./config');
-const swRoutes      = require('./routes/switches');
-const presetsRoutes = require('./routes/presets');
-const modelsRoutes  = require('./routes/models');
-const scanRoutes    = require('./routes/scan');
+const express          = require('express');
+const path             = require('path');
+const { PORT }         = require('./config');
+const swRoutes         = require('./routes/switches');
+const presetsRoutes    = require('./routes/presets');
+const vlanPresetsRoutes = require('./routes/vlanPresets');
+const modelsRoutes     = require('./routes/models');
+const scanRoutes       = require('./routes/scan');
+const settingsRoutes   = require('./routes/settings');
 
 const app = express();
 
@@ -21,10 +23,12 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // API
-app.use('/api/switches', swRoutes);
-app.use('/api/presets',  presetsRoutes);
-app.use('/api/models',   modelsRoutes);
-app.use('/api/scan',     scanRoutes);
+app.use('/api/switches',      swRoutes);
+app.use('/api/presets',       presetsRoutes);
+app.use('/api/vlan-presets',  vlanPresetsRoutes);
+app.use('/api/models',        modelsRoutes);
+app.use('/api/settings',      settingsRoutes);
+app.use('/api/scan',          scanRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {

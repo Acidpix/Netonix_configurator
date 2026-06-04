@@ -2,6 +2,8 @@
 
 const express = require('express');
 const net     = require('net');
+const { getConfig } = require('../netonix');
+const { get } = require('../settingsStore');
 const router  = express.Router();
 
 function tcpCheck(ip, port, timeout = 600) {
@@ -39,6 +41,25 @@ function expandCidr(subnet) {
   return ips;
 }
 
+async function getDeviceInfo(ip, https) {
+  try {
+    const username = get('scan_default_username', 'admin');
+    const password = get('scan_default_password', 'netonix');
+    const config = await getConfig({
+      ip,
+      https,
+      username,
+      password,
+    });
+    return {
+      hostname: config.config?.hostname || null,
+      location: config.config?.location || null,
+    };
+  } catch {
+    return { hostname: null, location: null };
+  }
+}
+
 // POST /api/scan  { subnet: "192.168.1.0/24" }
 router.post('/', async (req, res) => {
   const { subnet } = req.body;
@@ -55,9 +76,12 @@ router.post('/', async (req, res) => {
   for (let i = 0; i < ips.length; i += BATCH) {
     const batch   = ips.slice(i, i + BATCH);
     const results = await Promise.all(batch.map(async ip => {
-      if (await tcpCheck(ip, 443)) return { ip, https: true };
-      if (await tcpCheck(ip, 80))  return { ip, https: false };
-      return null;
+      let https = false;
+      if (await tcpCheck(ip, 443)) https = true;
+      else if (!(await tcpCheck(ip, 80))) return null;
+
+      const info = await getDeviceInfo(ip, https);
+      return { ip, https, hostname: info.hostname, location: info.location };
     }));
     found.push(...results.filter(Boolean));
   }

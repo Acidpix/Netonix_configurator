@@ -101,6 +101,13 @@
     <div class="tab-pane" id="pane-vlans">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="card-title" style="margin:0">Presets VLAN</div>
+          <button class="btn btn-ghost" onclick="openVlanPresetsSettings()" style="font-size:11px">⚙️ Gérer</button>
+        </div>
+        <div id="vlan-preset-buttons" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="card-title" style="margin:0">Table des VLANs</div>
           <button class="btn btn-ghost" onclick="addVlan()" style="font-size:11px">＋ Ajouter</button>
         </div>
@@ -189,7 +196,9 @@
     <div class="modal-title">Paramètres</div>
     <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
       <button class="btn btn-ghost active" id="stab-models"  onclick="showSettingsTab('models')">Modèles de switch</button>
-      <button class="btn btn-ghost"        id="stab-presets" onclick="showSettingsTab('presets')">Presets</button>
+      <button class="btn btn-ghost"        id="stab-presets" onclick="showSettingsTab('presets')">Presets ports</button>
+      <button class="btn btn-ghost"        id="stab-vlan-presets" onclick="showSettingsTab('vlan-presets')">Presets VLAN</button>
+      <button class="btn btn-ghost"        id="stab-scan" onclick="showSettingsTab('scan')">Paramètres scan</button>
     </div>
     <div style="overflow-y:auto;flex:1">
 
@@ -207,7 +216,7 @@
         </div>
       </div>
 
-      <!-- Tab Presets -->
+      <!-- Tab Presets ports -->
       <div id="settings-presets" style="display:none">
         <table class="vlan-tbl" style="margin-bottom:12px">
           <thead><tr><th>Label</th><th>PVID</th><th>Taggés</th><th>PoE</th><th></th></tr></thead>
@@ -216,9 +225,64 @@
         <button class="btn btn-ghost" style="font-size:11px" onclick="openPresetModal(null)">＋ Nouveau preset</button>
       </div>
 
+      <!-- Tab Presets VLAN -->
+      <div id="settings-vlan-presets" style="display:none">
+        <table class="vlan-tbl" style="margin-bottom:12px">
+          <thead><tr><th>Label</th><th style="width:80px">VLANs</th><th style="flex:1"></th><th></th></tr></thead>
+          <tbody id="settings-vlan-presets-tbody"></tbody>
+        </table>
+        <button class="btn btn-ghost" style="font-size:11px" onclick="openVlanPresetModal(null)">＋ Nouveau preset VLAN</button>
+      </div>
+
+      <!-- Tab Paramètres scan -->
+      <div id="settings-scan" style="display:none">
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:16px">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:12px">
+            Credentials utilisés lors du scan réseau pour récupérer automatiquement le nom et la localisation des switchs.
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field">
+              <label>Username par défaut</label>
+              <input id="scan-username" placeholder="admin" />
+            </div>
+            <div class="field">
+              <label>Password par défaut</label>
+              <input id="scan-password" type="password" placeholder="netonix" />
+            </div>
+          </div>
+          <button class="btn btn-primary" style="margin-top:12px" onclick="saveScanSettings()">Enregistrer</button>
+        </div>
+      </div>
+
     </div>
     <div class="modal-actions" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="closeSettings()">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal édition preset VLAN ── -->
+<div class="modal-bg" id="modal-vlan-preset">
+  <div class="modal" style="width:560px;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title" id="vlan-preset-modal-title">Nouveau preset VLAN</div>
+    <div style="overflow-y:auto;flex:1">
+      <div class="modal-row">
+        <div class="field"><label>Clé</label><input id="vpm-key" placeholder="mon-preset" /></div>
+        <div class="field"><label>Label</label><input id="vpm-label" placeholder="Mon Preset VLAN" /></div>
+      </div>
+      <div class="modal-row">
+        <div class="field"><label>Description</label><input id="vpm-desc" placeholder="Description du preset" /></div>
+        <div class="field"><label>Couleur (CSS var)</label><input id="vpm-color" placeholder="var(--accent)" value="var(--text2)" /></div>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>VLANs (JSON)</label>
+        <textarea id="vpm-vlans" style="font-family:var(--mono);font-size:11px;min-height:200px;padding:8px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);resize:vertical" placeholder='[{"id":1,"name":"Management","subnet":"192.168.1.0/24","desc":"Gestion"}]'></textarea>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">Chaque VLAN doit avoir : id, name, subnet (optionnel), desc (optionnel)</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeVlanPresetModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="saveVlanPreset()">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -288,11 +352,12 @@
 <!-- ── Toasts ── -->
 <div id="toast"></div>
 
-<!-- ── Scripts (ordre important : presets → ui → ports → vlans → app) ── -->
+<!-- ── Scripts (ordre important : presets → ui → ports → vlans → vlanPresets → app) ── -->
 <script src="/js/presets.js"></script>
 <script src="/js/ui.js"></script>
 <script src="/js/ports.js"></script>
 <script src="/js/vlans.js"></script>
+<script src="/js/vlanPresets.js"></script>
 <script src="/js/app.js"></script>
 
 </body>

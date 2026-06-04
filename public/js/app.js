@@ -9,7 +9,8 @@ window.App = {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function init() {
-  await Promise.all([initPresets(), initModels()]);
+  await Promise.all([initPresets(), initModels(), initVlanPresets()]);
+  renderVlanPresetButtons();
   await loadSwitches();
   setInterval(pingAll, 30000);
 }
@@ -94,14 +95,16 @@ async function selectSwitch(id) {
   resetVlans();
   renderVlanTable();
   hidePortDetail();
-  document.getElementById('raw-config').textContent = 'Récupérez la configuration du switch…';
+  document.getElementById('raw-config').textContent = 'Chargement de la configuration…';
+
+  // Charger la config immédiatement, faire le ping en parallèle
+  fetchConfig(true).catch(() => {});
 
   try {
     const rp = await fetch(`/api/switches/${id}/ping`);
     const dp = await rp.json();
     sw._online = dp.online;
     setTopbar(sw, dp.online);
-    if (dp.online) fetchConfig(true);
   } catch (e) {
     sw._online = false;
     setTopbar(sw, false);
@@ -302,6 +305,7 @@ async function deleteSwitch() {
 function openSettings() {
   loadSettingsModels();
   loadSettingsPresets();
+  loadScanSettings();
   showSettingsTab('models');
   document.getElementById('modal-settings').classList.add('open');
 }
@@ -311,10 +315,13 @@ function closeSettings() {
 }
 
 function showSettingsTab(tab) {
-  ['models', 'presets'].forEach(t => {
-    document.getElementById(`stab-${t}`).classList.toggle('active', t === tab);
-    document.getElementById(`settings-${t}`).style.display = t === tab ? 'block' : 'none';
+  ['models', 'presets', 'vlan-presets', 'scan'].forEach(t => {
+    const btn = document.getElementById(`stab-${t}`);
+    if (btn) btn.classList.toggle('active', t === tab);
+    const pane = document.getElementById(`settings-${t}`);
+    if (pane) pane.style.display = t === tab ? 'block' : 'none';
   });
+  if (tab === 'vlan-presets') loadSettingsVlanPresets();
 }
 
 async function loadSettingsModels() {
@@ -476,6 +483,145 @@ async function deletePreset(key) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+// ── Paramètres scan ───────────────────────────────────────────────────────────
+async function loadScanSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const settings = await r.json();
+    document.getElementById('scan-username').value = settings.scan_default_username || 'admin';
+    document.getElementById('scan-password').value = settings.scan_default_password || 'netonix';
+  } catch (e) { toast('Erreur chargement settings : ' + e.message, 'err'); }
+}
+
+async function saveScanSettings() {
+  const username = document.getElementById('scan-username').value.trim();
+  const password = document.getElementById('scan-password').value.trim();
+  if (!username || !password) return toast('Remplissez tous les champs', 'err');
+  try {
+    await Promise.all([
+      fetch('/api/settings/scan_default_username', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: username })
+      }),
+      fetch('/api/settings/scan_default_password', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: password })
+      })
+    ]);
+    toast('Paramètres de scan enregistrés', 'ok');
+  } catch (e) { toast('Erreur sauvegarde : ' + e.message, 'err'); }
+}
+
+// ── VLAN Presets ──────────────────────────────────────────────────────────────
+let _editVlanPresetKey = null;
+
+function openVlanPresetsSettings() {
+  openSettings();
+  showSettingsTab('vlan-presets');
+}
+
+async function loadSettingsVlanPresets() {
+  try {
+    const r = await fetch('/api/vlan-presets');
+    const list = await r.json();
+    const tbody = document.getElementById('settings-vlan-presets-tbody');
+    tbody.innerHTML = list.map(vp => {
+      const vlanCount = Array.isArray(vp.vlans) ? vp.vlans.length : 0;
+      return `
+      <tr>
+        <td>
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${vp.color};margin-right:6px"></span>
+          ${vp.label}
+        </td>
+        <td style="text-align:center;font-size:11px">${vlanCount}</td>
+        <td style="font-size:10px;color:var(--text3)">${vp.description}</td>
+        <td style="text-align:center;display:flex;gap:4px">
+          <button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="openVlanPresetModal('${vp.key}')">Modifier</button>
+          ${vp.builtin ? '' : `<button class="btn btn-danger" style="font-size:10px;padding:2px 8px" onclick="deleteVlanPreset('${vp.key}')">Supprimer</button>`}
+        </td>
+      </tr>
+    `;
+    }).join('');
+  } catch (e) { console.error(e); }
+}
+
+async function openVlanPresetModal(key) {
+  _editVlanPresetKey = key || null;
+  const isNew = !key;
+  document.getElementById('vlan-preset-modal-title').textContent = isNew ? 'Nouveau preset VLAN' : 'Modifier preset VLAN';
+
+  if (key) {
+    const r = await fetch('/api/vlan-presets');
+    const list = await r.json();
+    const vp = list.find(x => x.key === key);
+    if (!vp) return;
+    document.getElementById('vpm-key').value          = vp.key;
+    document.getElementById('vpm-key').disabled       = true;
+    document.getElementById('vpm-label').value        = vp.label;
+    document.getElementById('vpm-desc').value         = vp.description;
+    document.getElementById('vpm-color').value        = vp.color;
+    document.getElementById('vpm-vlans').value        = JSON.stringify(vp.vlans, null, 2);
+  } else {
+    document.getElementById('vpm-key').value          = '';
+    document.getElementById('vpm-key').disabled       = false;
+    document.getElementById('vpm-label').value        = '';
+    document.getElementById('vpm-desc').value         = '';
+    document.getElementById('vpm-color').value        = 'var(--text2)';
+    document.getElementById('vpm-vlans').value        = '[]';
+  }
+  document.getElementById('modal-vlan-preset').classList.add('open');
+}
+
+function closeVlanPresetModal() {
+  document.getElementById('modal-vlan-preset').classList.remove('open');
+  _editVlanPresetKey = null;
+}
+
+async function saveVlanPreset() {
+  const key = _editVlanPresetKey || document.getElementById('vpm-key').value.trim();
+  if (!key) return toast('Clé preset requise', 'err');
+
+  let vlans;
+  try {
+    vlans = JSON.parse(document.getElementById('vpm-vlans').value || '[]');
+    if (!Array.isArray(vlans)) throw new Error('Doit être un tableau');
+  } catch (e) {
+    return toast(`Erreur JSON VLANs: ${e.message}`, 'err');
+  }
+
+  const data = {
+    key,
+    label      : document.getElementById('vpm-label').value.trim(),
+    description: document.getElementById('vpm-desc').value.trim(),
+    vlans,
+    color      : document.getElementById('vpm-color').value.trim() || 'var(--text2)',
+  };
+
+  try {
+    const url    = _editVlanPresetKey ? `/api/vlan-presets/${key}` : '/api/vlan-presets';
+    const method = _editVlanPresetKey ? 'PUT' : 'POST';
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    closeVlanPresetModal();
+    await initVlanPresets();
+    renderVlanPresetButtons();
+    await loadSettingsVlanPresets();
+    toast('Preset VLAN sauvegardé', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteVlanPreset(key) {
+  if (!confirm(`Supprimer le preset VLAN "${key}" ?`)) return;
+  try {
+    await fetch(`/api/vlan-presets/${key}`, { method: 'DELETE' });
+    await initVlanPresets();
+    renderVlanPresetButtons();
+    await loadSettingsVlanPresets();
+    toast('Preset VLAN supprimé', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 // ── Scan réseau ───────────────────────────────────────────────────────────────
 function openScan() {
   document.getElementById('scan-results').innerHTML = '';
@@ -509,14 +655,16 @@ async function startScan() {
       res.innerHTML = `<div style="color:var(--text3);font-size:12px">${d.scanned} hôtes scannés — aucun appareil trouvé.</div>`;
     } else {
       res.innerHTML = `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${d.found.length} appareil(s) trouvé(s) sur ${d.scanned} hôtes :</div>` +
-        d.found.map(({ ip, https }) => `
+        d.found.map(({ ip, https, hostname, location }) => `
           <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
             <div>
               <span style="font-family:var(--mono);font-size:12px">${ip}</span>
               <span style="font-size:10px;color:var(--text3);margin-left:8px">${https ? 'HTTPS' : 'HTTP'}</span>
+              ${hostname ? `<div style="font-size:10px;color:var(--text2)">${hostname}</div>` : ''}
+              ${location ? `<div style="font-size:10px;color:var(--text3)">${location}</div>` : ''}
             </div>
             <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px"
-              onclick="preFillAdd('${ip}', ${https}); closeScan();">Ajouter</button>
+              onclick="preFillAdd('${ip}', ${https}, '${hostname || ''}', '${location || ''}'); closeScan();">Ajouter</button>
           </div>
         `).join('');
     }
@@ -529,10 +677,12 @@ async function startScan() {
   }
 }
 
-function preFillAdd(ip, https) {
+function preFillAdd(ip, https, hostname = '', location = '') {
   openAddModal();
   document.getElementById('f-ip').value        = ip;
   document.getElementById('f-https').checked   = https;
+  if (hostname) document.getElementById('f-name').value = hostname;
+  if (location) document.getElementById('f-location').value = location;
 }
 
 // ── Misc ──────────────────────────────────────────────────────────────────────
@@ -555,6 +705,10 @@ document.getElementById('modal-scan').addEventListener('click', function (e) {
 
 document.getElementById('modal-preset').addEventListener('click', function (e) {
   if (e.target === this) closePresetModal();
+});
+
+document.getElementById('modal-vlan-preset').addEventListener('click', function (e) {
+  if (e.target === this) closeVlanPresetModal();
 });
 
 init();
