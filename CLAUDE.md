@@ -6,7 +6,7 @@ Contexte projet pour Claude Code. À lire avant toute modification.
 
 ## Ce que fait ce projet
 
-Interface web de gestion multi-switch **Netonix WISP** (modèles WS-8, WS-12, WS-26, WISP-12, WISP-16).
+Interface web de gestion multi-switch **Netonix WISP** (modèles WS-6, WS-8, WS-12, WS-26, WISP-12, WISP-16 + custom).
 
 Un serveur **Express** tourne en local (Raspberry Pi / NAS / VM) et sert de proxy entre le navigateur et les switchs : il gère l'authentification par cookie, les certificats SSL auto-signés, et expose une API REST propre au frontend.
 
@@ -16,7 +16,8 @@ Un serveur **Express** tourne en local (Raspberry Pi / NAS / VM) et sert de prox
 
 - **Backend** : Node.js 16+, Express 4, node-fetch 2 (CommonJS, pas d'ESM)
 - **Frontend** : HTML/CSS/JS vanilla, pas de framework, pas de bundler
-- **Persistance** : fichier JSON (`data/switches.json`), ignoré par git
+- **Persistance** : SQLite via `better-sqlite3` (`data/netonix.db`) — module natif, nécessite `python3 make g++` sur le serveur
+- **Migration** : si `data/switches.json` existe au premier démarrage, les données sont importées automatiquement dans SQLite
 
 ---
 
@@ -25,12 +26,18 @@ Un serveur **Express** tourne en local (Raspberry Pi / NAS / VM) et sert de prox
 ```
 src/
   server.js        # Point d'entrée — Express + routes
-  config.js        # Variables d'env (PORT, DATA_FILE, SWITCH_TIMEOUT, IGNORE_SSL)
-  store.js         # CRUD JSON — load / save / findById / insert / update / remove
-  netonix.js       # Client API Netonix — login / getConfig / pushConfig / resetConfig / ping / portStats
-  presets.js       # Définition serveur des presets de port + toPortConfig() + detectPreset()
+  config.js        # Variables d'env (PORT, DB_FILE, SWITCH_TIMEOUT, IGNORE_SSL)
+  db.js            # Connexion SQLite + création tables + seed + migration JSON
+  store.js         # CRUD SQLite — switches (id, name, ip, username, password, group, model, https, location, snmp_location)
+  presetsStore.js  # CRUD SQLite — presets éditables (key, label, pvid, tagged, poe, ...)
+  modelsStore.js   # CRUD SQLite — modèles de switch (key, label, port_count, builtin)
+  netonix.js       # Client API Netonix — login / getConfig / pushConfig / resetConfig / ping / portStats / detectModel
+  presets.js       # toPortConfig() (lit presetsStore) + detectPreset()
   routes/
-    switches.js    # Toutes les routes /api/switches/*
+    switches.js    # Routes /api/switches/* — inclut location/snmp_location, detectModel
+    presets.js     # CRUD /api/presets
+    models.js      # CRUD /api/models
+    scan.js        # POST /api/scan — TCP scan réseau
 
 public/
   index.html       # Shell SPA — charge les JS dans l'ordre ci-dessous

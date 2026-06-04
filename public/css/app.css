@@ -43,9 +43,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 .sw-dot.pending { background: var(--amber); animation: blink 1s infinite; }
 @keyframes blink { 0%,100%{opacity:1}50%{opacity:.3} }
 .sw-name { font-size: 12px; font-weight: 500; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sw-ip { font-size: 10px; color: var(--text3); font-family: var(--mono); }
-.btn-add-sw { margin: 8px; padding: 8px; background: transparent; border: 1px dashed var(--border2); border-radius: var(--r); color: var(--text2); cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all .12s; font-family: var(--font); }
+.sw-ip  { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+.sw-loc { font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-footer { padding: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; position: relative; }
+.btn-add-sw { padding: 8px; background: transparent; border: 1px dashed var(--border2); border-radius: var(--r); color: var(--text2); cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all .12s; font-family: var(--font); }
 .btn-add-sw:hover { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,.06); }
+.btn-settings { position: absolute; bottom: 12px; right: 8px; background: transparent; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 4px 6px; border-radius: var(--r); transition: all .12s; }
+.btn-settings:hover { color: var(--text2); background: var(--bg3); }
 
 /* ── Main ── */
 #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -95,30 +99,33 @@ select option { background: var(--bg3); }
 
 /* ── Port grid ── */
 #port-grid { display: grid; gap: 6px; }
-.port-cell { background: var(--bg3); border: 1.5px solid var(--border); border-radius: var(--r); cursor: pointer; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all .12s; position: relative; user-select: none; }
+.port-cell { background: var(--bg3); border: 1.5px solid var(--border); border-radius: var(--r); cursor: pointer; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: all .12s; position: relative; user-select: none; }
 .port-cell:hover { border-color: var(--border2); }
 .port-cell.selected  { border-color: var(--accent); background: rgba(59,130,246,.1); }
 .port-cell.p-cam     { border-color: var(--pink);   background: rgba(236,72,153,.08); }
-.port-cell.p-ap      { border-color: var(--accent);  background: rgba(59,130,246,.08); }
+.port-cell.p-ap      { border-color: var(--accent); background: rgba(59,130,246,.08); }
 .port-cell.p-uplink  { border-color: var(--teal);   background: rgba(20,184,166,.08); }
 .port-cell.p-voip    { border-color: var(--amber);  background: rgba(245,158,11,.08); }
 .port-cell.p-server  { border-color: var(--purple); background: rgba(168,85,247,.08); }
 .port-cell.p-disabled{ border-color: var(--text3);  background: var(--bg); opacity: .5; }
+.port-cell.p-unknown { border-color: var(--text3);  background: rgba(85,96,128,.08); border-style: dashed; }
+.port-color-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 .port-num   { font-size: 10px; font-weight: 700; font-family: var(--mono); }
-.port-icon  { font-size: 16px; }
-.port-label { font-size: 9px; color: var(--text3); text-align: center; }
+.port-label { font-size: 9px; color: var(--text3); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .poe-dot    { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
 
 /* ── Presets ── */
 .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.preset-btn { padding: 10px 8px; border-radius: var(--r); cursor: pointer; border: 1px solid var(--border); background: var(--bg3); display: flex; flex-direction: column; align-items: center; gap: 6px; transition: all .12s; font-size: 11px; font-weight: 500; color: var(--text2); font-family: var(--font); }
-.preset-btn .pi { font-size: 20px; }
+.preset-btn { padding: 10px 8px; border-radius: var(--r); cursor: pointer; border: 1px solid var(--border); background: var(--bg3); display: flex; flex-direction: row; align-items: center; gap: 8px; transition: all .12s; font-size: 11px; font-weight: 500; color: var(--text2); font-family: var(--font); }
 .preset-btn:hover { border-color: var(--border2); color: var(--text); background: var(--bg4); }
-.preset-cam:hover    { border-color: var(--pink);   color: var(--pink);   background: rgba(236,72,153,.08); }
-.preset-ap:hover     { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,.08); }
-.preset-uplink:hover { border-color: var(--teal);   color: var(--teal);   background: rgba(20,184,166,.08); }
-.preset-voip:hover   { border-color: var(--amber);  color: var(--amber);  background: rgba(245,158,11,.08); }
-.preset-server:hover { border-color: var(--purple); color: var(--purple); background: rgba(168,85,247,.08); }
+.preset-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+
+/* ── Tooltip port ── */
+#port-tooltip { position: fixed; z-index: 300; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r); padding: 10px 12px; font-size: 11px; min-width: 160px; max-width: 220px; display: none; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.tt-title { font-weight: 600; font-size: 12px; margin-bottom: 6px; }
+.tt-row   { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; color: var(--text2); }
+.tt-row b { color: var(--text); font-family: var(--mono); }
+.tt-desc  { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); color: var(--text3); font-style: italic; }
 
 /* ── VLAN table ── */
 .vlan-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }

@@ -142,4 +142,33 @@ async function portStats(sw, portNum) {
   return data;
 }
 
-module.exports = { login, get, post, getConfig, pushConfig, resetConfig, ping, portStats };
+/**
+ * Tente de détecter le modèle du switch depuis sa config.
+ * Regarde d'abord config.hardware / config.model, puis déduit depuis le nombre de ports.
+ * @param {object} config    - config JSON du switch
+ * @param {Array}  models    - liste des modèles disponibles (depuis modelsStore)
+ * @returns {string|null}    - clé de modèle ou null
+ */
+function detectModel(config, models = []) {
+  if (!config) return null;
+
+  // Champ direct dans la config (certains firmware)
+  const hw = config.hardware || config.model || '';
+  if (hw) {
+    const match = models.find(m => hw.toUpperCase().includes(m.key.toUpperCase()));
+    if (match) return match.key;
+  }
+
+  // Déduction depuis le nombre de ports
+  const portCount = Object.keys(config.ports || {}).length;
+  if (portCount > 0) {
+    const byCount = models
+      .filter(m => m.port_count === portCount)
+      .sort((a, b) => a.builtin - b.builtin);
+    if (byCount.length) return byCount[0].key;
+  }
+
+  return null;
+}
+
+module.exports = { login, get, post, getConfig, pushConfig, resetConfig, ping, portStats, detectModel };

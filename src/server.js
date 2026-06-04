@@ -7,10 +7,13 @@ try { require('fs').readFileSync('.env', 'utf8').split('\n').forEach(line => {
     process.env[k.trim()] = v.join('=').trim();
 }); } catch {}
 
-const express    = require('express');
-const path       = require('path');
-const { PORT }   = require('./config');
-const swRoutes   = require('./routes/switches');
+const express       = require('express');
+const path          = require('path');
+const { PORT }      = require('./config');
+const swRoutes      = require('./routes/switches');
+const presetsRoutes = require('./routes/presets');
+const modelsRoutes  = require('./routes/models');
+const scanRoutes    = require('./routes/scan');
 
 const app = express();
 
@@ -19,6 +22,9 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // API
 app.use('/api/switches', swRoutes);
+app.use('/api/presets',  presetsRoutes);
+app.use('/api/models',   modelsRoutes);
+app.use('/api/scan',     scanRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {
@@ -26,5 +32,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n✅  Netonix Manager  →  http://localhost:${PORT}\n`);
+  console.log(`\n  Netonix Manager  ->  http://localhost:${PORT}\n`);
 });

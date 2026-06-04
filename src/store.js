@@ -1,50 +1,74 @@
 'use strict';
 
-const fs   = require('fs');
-const path = require('path');
-const { DATA_FILE } = require('./config');
+const { randomUUID } = require('crypto');
+const db = require('./db');
 
-function load() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    }
-  } catch (e) {
-    console.error('[store] Erreur lecture :', e.message);
-  }
-  return [];
+function _row(r) {
+  if (!r) return null;
+  return {
+    id           : r.id,
+    name         : r.name,
+    ip           : r.ip,
+    username     : r.username,
+    password     : r.password,
+    group        : r.group_name,
+    model        : r.model,
+    https        : r.https === 1,
+    location     : r.location,
+    snmp_location: r.snmp_location,
+  };
 }
 
-function save(list) {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(list, null, 2));
+function load() {
+  return db.prepare('SELECT * FROM switches ORDER BY group_name, name').all().map(_row);
 }
 
 function findById(id) {
-  return load().find(s => s.id === id) || null;
+  return _row(db.prepare('SELECT * FROM switches WHERE id = ?').get(id));
 }
 
-function insert(sw) {
-  const list = load();
-  list.push(sw);
-  save(list);
-  return sw;
+function insert(data) {
+  const id = data.id || randomUUID();
+  db.prepare(
+    'INSERT INTO switches (id,name,ip,username,password,group_name,model,https,location,snmp_location) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run(
+    id,
+    data.name,
+    data.ip,
+    data.username,
+    data.password,
+    data.group || 'Défaut',
+    data.model || 'WS-12',
+    data.https !== false ? 1 : 0,
+    data.location || '',
+    data.snmp_location || ''
+  );
+  return findById(id);
 }
 
 function update(id, patch) {
-  const list = load();
-  const idx  = list.findIndex(s => s.id === id);
-  if (idx === -1) return null;
-  if (!patch.password || patch.password === '***') patch.password = list[idx].password;
-  list[idx] = { ...list[idx], ...patch };
-  save(list);
-  return list[idx];
+  const cur = db.prepare('SELECT * FROM switches WHERE id = ?').get(id);
+  if (!cur) return null;
+  const password = (!patch.password || patch.password === '***') ? cur.password : patch.password;
+  db.prepare(
+    'UPDATE switches SET name=?,ip=?,username=?,password=?,group_name=?,model=?,https=?,location=?,snmp_location=? WHERE id=?'
+  ).run(
+    patch.name          ?? cur.name,
+    patch.ip            ?? cur.ip,
+    patch.username      ?? cur.username,
+    password,
+    patch.group         ?? cur.group_name,
+    patch.model         ?? cur.model,
+    patch.https !== undefined ? (patch.https !== false ? 1 : 0) : cur.https,
+    patch.location      ?? cur.location,
+    patch.snmp_location ?? cur.snmp_location,
+    id
+  );
+  return findById(id);
 }
 
 function remove(id) {
-  const list = load().filter(s => s.id !== id);
-  save(list);
+  db.prepare('DELETE FROM switches WHERE id = ?').run(id);
 }
 
-module.exports = { load, save, findById, insert, update, remove };
+module.exports = { load, findById, insert, update, remove };

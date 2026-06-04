@@ -63,6 +63,21 @@ if [[ -z "$GIT_BIN" ]]; then
 fi
 echo "✓ git ($GIT_BIN)"
 
+# ── Vérifie les outils de compilation (requis pour better-sqlite3) ────────────
+if ! command -v python3 &>/dev/null || ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
+  echo ""
+  echo "⚠ Outils de compilation manquants (requis pour better-sqlite3)."
+  echo "  Sur Debian/Ubuntu : apt-get install -y python3 make g++"
+  read -r -p "  Installer automatiquement ? [o/N] " resp
+  if [[ "$resp" =~ ^[Oo]$ ]]; then
+    apt-get install -y python3 make g++ || { echo "❌ Installation échouée."; exit 1; }
+  else
+    echo "❌ Installation annulée. Installez les outils manuellement puis relancez."
+    exit 1
+  fi
+fi
+echo "✓ Outils de compilation disponibles"
+
 # ── Clone ou met à jour le dépôt ──────────────────────────────────────────────
 if [[ -d "$APP_DIR/.git" ]]; then
   echo "→ Dépôt existant détecté — mise à jour…"

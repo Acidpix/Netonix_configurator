@@ -18,7 +18,11 @@
     </div>
   </div>
   <div id="sw-list"></div>
-  <button class="btn-add-sw" onclick="openAddModal()">＋ Ajouter un switch</button>
+  <div class="sidebar-footer">
+    <button class="btn-add-sw" onclick="openAddModal()">＋ Ajouter un switch</button>
+    <button class="btn-add-sw" onclick="openScan()" style="margin-top:4px">&#8981; Scan réseau</button>
+    <button class="btn-settings" onclick="openSettings()" title="Paramètres">&#9881;</button>
+  </div>
 </div>
 
 <!-- ── Main ── -->
@@ -34,8 +38,8 @@
     <div class="spacer"></div>
     <button class="btn btn-ghost"   id="btn-fetch" onclick="fetchConfig()"   disabled>↓ Récupérer config</button>
     <button class="btn btn-amber"   id="btn-reset" onclick="confirmReset()"  disabled>↺ Reset propre</button>
-    <button class="btn btn-primary" id="btn-push"  onclick="pushConfig()"   disabled>↑ Pousser config</button>
-    <button class="btn btn-ghost"   id="btn-edit"  onclick="openEditModal()" disabled style="padding:6px 8px" title="Modifier">⚙</button>
+    <button class="btn btn-primary" id="btn-push"  onclick="pushConfig()"    disabled>↑ Pousser config</button>
+    <button class="btn btn-ghost"   id="btn-edit"  onclick="openEditModal()" disabled style="padding:6px 8px" title="Modifier">&#9881;</button>
     <button class="btn btn-danger"  id="btn-del"   onclick="deleteSwitch()"  disabled style="padding:6px 8px" title="Supprimer">✕</button>
   </div>
 
@@ -52,7 +56,7 @@
     <!-- Ports tab -->
     <div class="tab-pane active" id="pane-ports">
       <div class="empty" id="empty-state">
-        <div class="ei">🔌</div>
+        <div class="ei" style="font-size:48px;color:var(--text3)">&#9679;</div>
         <div>Sélectionnez un switch dans la liste</div>
         <div style="font-size:11px">ou ajoutez-en un avec le bouton ci-dessous à gauche</div>
       </div>
@@ -75,14 +79,12 @@
           <!-- Presets + légende -->
           <div>
             <div class="card">
-              <div class="card-title">Presets</div>
-              <div class="preset-grid">
-                <button class="preset-btn preset-cam"     onclick="applyPreset('cam')">    <span class="pi">📷</span>Caméra IP</button>
-                <button class="preset-btn preset-ap"      onclick="applyPreset('ap')">     <span class="pi">📡</span>AP WiFi</button>
-                <button class="preset-btn preset-uplink"  onclick="applyPreset('uplink')"> <span class="pi">⬆️</span>Uplink</button>
-                <button class="preset-btn preset-voip"    onclick="applyPreset('voip')">   <span class="pi">📞</span>VoIP</button>
-                <button class="preset-btn preset-server"  onclick="applyPreset('server')"> <span class="pi">🖥</span>Serveur</button>
-                <button class="preset-btn preset-disabled" onclick="applyPreset('disabled')"><span class="pi">🚫</span>Désactivé</button>
+              <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+                Presets
+                <button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="openSettings(); showSettingsTab('presets')">Gérer</button>
+              </div>
+              <div id="preset-grid" class="preset-grid">
+                <!-- Généré par renderPresetButtons() dans presets.js -->
               </div>
             </div>
             <div class="card">
@@ -122,7 +124,7 @@
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="card-title" style="margin:0">Configuration JSON brute</div>
-          <button class="btn btn-ghost" onclick="copyRaw()" style="font-size:11px">📋 Copier</button>
+          <button class="btn btn-ghost" onclick="copyRaw()" style="font-size:11px">Copier</button>
         </div>
         <pre id="raw-config">Récupérez d'abord la configuration du switch.</pre>
       </div>
@@ -130,6 +132,9 @@
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+<!-- ── Tooltip port ── -->
+<div id="port-tooltip"></div>
 
 <!-- ── Modal ajout/édition switch ── -->
 <div class="modal-bg" id="modal-sw">
@@ -145,27 +150,137 @@
     </div>
     <div class="modal-row">
       <div class="field"><label>Groupe</label>        <input id="f-group" placeholder="Site principal" /></div>
-      <div class="field"><label>Modèle</label>
-        <select id="f-model">
-          <option value="WS-8">WS-8-150W  (8 ports)</option>
-          <option value="WS-12" selected>WS-12-250W (12 ports)</option>
-          <option value="WS-26">WS-26-500W (26 ports)</option>
-          <option value="WISP-12">WISP-12-MINI (12 ports)</option>
-          <option value="WISP-16">WISP-16 (16 ports)</option>
-        </select>
-      </div>
+      <div class="field"><label>Modèle</label>        <select id="f-model"></select></div>
+    </div>
+    <div class="modal-row">
+      <div class="field"><label>Location</label>      <input id="f-location" placeholder="Salle serveur, armoire 2" /></div>
+      <div class="field"><label>Location SNMP</label> <input id="f-snmp-location" placeholder="Rack-A1" /></div>
     </div>
     <div class="modal-row full">
       <div class="field">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="f-https" style="width:auto" checked />
-          Connexion HTTPS (recommandé, certificats auto-signés acceptés)
+          Connexion HTTPS (certificats auto-signés acceptés)
         </label>
       </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost"   onclick="closeModal()">Annuler</button>
       <button class="btn btn-primary" id="btn-save-sw" onclick="saveSwitch()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal confirmation preset ── -->
+<div class="modal-bg" id="modal-confirm-preset">
+  <div class="modal" style="width:460px">
+    <div class="modal-title">Confirmer l'application du preset</div>
+    <div id="confirm-preset-content"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost"   onclick="cancelPresetApply()">Annuler</button>
+      <button class="btn btn-primary" onclick="confirmPresetApply()">Appliquer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal paramètres ── -->
+<div class="modal-bg" id="modal-settings">
+  <div class="modal" style="width:560px;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title">Paramètres</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+      <button class="btn btn-ghost active" id="stab-models"  onclick="showSettingsTab('models')">Modèles de switch</button>
+      <button class="btn btn-ghost"        id="stab-presets" onclick="showSettingsTab('presets')">Presets</button>
+    </div>
+    <div style="overflow-y:auto;flex:1">
+
+      <!-- Tab Modèles -->
+      <div id="settings-models">
+        <table class="vlan-tbl" style="margin-bottom:16px">
+          <thead><tr><th>Clé</th><th>Label</th><th style="text-align:center">Ports</th><th></th></tr></thead>
+          <tbody id="settings-models-tbody"></tbody>
+        </table>
+        <div style="display:grid;grid-template-columns:1fr 2fr 80px auto;gap:8px;align-items:end">
+          <div class="field"><label>Clé</label><input id="nm-key" placeholder="WS-XX" /></div>
+          <div class="field"><label>Label</label><input id="nm-label" placeholder="WS-XX (N ports)" /></div>
+          <div class="field"><label>Ports</label><input id="nm-count" type="number" placeholder="12" /></div>
+          <button class="btn btn-primary" onclick="addModel()" style="margin-top:16px">Ajouter</button>
+        </div>
+      </div>
+
+      <!-- Tab Presets -->
+      <div id="settings-presets" style="display:none">
+        <table class="vlan-tbl" style="margin-bottom:12px">
+          <thead><tr><th>Label</th><th>PVID</th><th>Taggés</th><th>PoE</th><th></th></tr></thead>
+          <tbody id="settings-presets-tbody"></tbody>
+        </table>
+        <button class="btn btn-ghost" style="font-size:11px" onclick="openPresetModal(null)">＋ Nouveau preset</button>
+      </div>
+
+    </div>
+    <div class="modal-actions" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="closeSettings()">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal édition preset ── -->
+<div class="modal-bg" id="modal-preset">
+  <div class="modal" style="width:440px">
+    <div class="modal-title" id="preset-modal-title">Modifier preset</div>
+    <div class="modal-row">
+      <div class="field"><label>Clé</label>           <input id="pm-key" placeholder="mon-preset" /></div>
+      <div class="field"><label>Label</label>         <input id="pm-label" placeholder="Mon Preset" /></div>
+    </div>
+    <div class="modal-row">
+      <div class="field"><label>VLAN natif (PVID)</label><input id="pm-pvid" type="number" placeholder="1" /></div>
+      <div class="field"><label>VLANs taggés (virgules)</label><input id="pm-tagged" placeholder="10,20,30" /></div>
+    </div>
+    <div class="modal-row">
+      <div class="field">
+        <label>PoE</label>
+        <select id="pm-poe">
+          <option value="false">Désactivé</option>
+          <option value="24v">24V</option>
+          <option value="48v">48V</option>
+          <option value="48vHV">48V HV</option>
+        </select>
+      </div>
+      <div class="field"><label>Couleur (CSS var)</label><input id="pm-color" placeholder="var(--accent)" /></div>
+    </div>
+    <div class="modal-row">
+      <div class="field"><label>Description</label><input id="pm-desc" placeholder="Description courte" /></div>
+    </div>
+    <div class="modal-row" style="grid-template-columns:repeat(3,1fr)">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="pm-sc" style="width:auto" /> Storm-control
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="pm-stp" style="width:auto" /> STP portfast
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="pm-qos" style="width:auto" /> QoS DSCP
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost"   onclick="closePresetModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="savePreset()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal scan réseau ── -->
+<div class="modal-bg" id="modal-scan">
+  <div class="modal" style="width:440px">
+    <div class="modal-title">Scan réseau</div>
+    <div class="field" style="margin-bottom:12px">
+      <label>Subnet (CIDR)</label>
+      <input id="scan-subnet" placeholder="192.168.1.0/24"
+        onkeydown="if(event.key==='Enter') startScan()" />
+    </div>
+    <div id="scan-results"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-ghost"   onclick="closeScan()">Fermer</button>
+      <button class="btn btn-primary" id="btn-scan-start" onclick="startScan()">Scanner</button>
     </div>
   </div>
 </div>
