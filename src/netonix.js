@@ -28,26 +28,28 @@ function agent(sw) {
 
 /**
  * Authentifie et retourne le cookie de session.
- * @param {object} sw  - entrée du store (ip, username, password, https)
- * @returns {string}   - valeur du cookie (ex. "PHPSESSID=abc123")
+ * Supporte deux formats :
+ * - Ancien : POST /api/v1/login avec JSON
+ * - Nouveau (1.5.25+) : POST / avec form-urlencoded
  */
 async function login(sw) {
-  const res = await fetch(`${baseUrl(sw)}/api/v1/login`, {
+  const body = `username=${encodeURIComponent(sw.username)}&password=${encodeURIComponent(sw.password)}`;
+  const res = await fetch(`${baseUrl(sw)}/index.fcgi`, {
     method  : 'POST',
-    headers : { 'Content-Type': 'application/json' },
-    body    : JSON.stringify({ username: sw.username, password: sw.password }),
+    headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body    : body,
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
+    redirect: 'manual',
   });
 
-  if (!res.ok) {
+  if (![200, 301, 302].includes(res.status)) {
     throw new Error(`Authentification échouée : HTTP ${res.status} — vérifiez les credentials`);
   }
 
   const setCookie = res.headers.get('set-cookie') || '';
-  // Netonix envoie typiquement "PHPSESSID=xxxx; path=/" ou "session=xxxx"
   const match = setCookie.match(/(?:PHPSESSID|session)=([^;]+)/i);
-  if (!match) throw new Error('Aucun cookie de session reçu — firmware Netonix incompatible ?');
+  if (!match) throw new Error('Aucun cookie de session reçu — vérifiez les credentials');
   return `${match[0]}`;
 }
 
