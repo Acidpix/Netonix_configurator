@@ -7,6 +7,7 @@
 
 set -e
 
+REPO_URL="https://github.com/Acidpix/Netonix_configurator.git"
 APP_PORT=${APP_PORT:-3000}
 APP_DIR=${APP_DIR:-/opt/netonix-manager}
 
@@ -53,11 +54,29 @@ NODE_VER=$("$NODE_BIN" -e "process.stdout.write(process.version)")
 echo "✓ Node.js $NODE_VER  ($NODE_BIN)"
 echo "✓ npm                 ($NPM_BIN)"
 
-# ── Copie les fichiers ────────────────────────────────────────────────────────
-mkdir -p "$APP_DIR"
-cp -r . "$APP_DIR/"
+# ── Localise git ──────────────────────────────────────────────────────────────
+GIT_BIN=$(command -v git 2>/dev/null || true)
+if [[ -z "$GIT_BIN" ]]; then
+  echo "❌ git introuvable."
+  echo "   Sur Debian/Ubuntu : apt-get install -y git"
+  exit 1
+fi
+echo "✓ git ($GIT_BIN)"
+
+# ── Clone ou met à jour le dépôt ──────────────────────────────────────────────
+if [[ -d "$APP_DIR/.git" ]]; then
+  echo "→ Dépôt existant détecté — mise à jour…"
+  cd "$APP_DIR"
+  git fetch origin main
+  git reset --hard origin/main
+  echo "✓ Code mis à jour depuis GitHub"
+else
+  echo "→ Clonage depuis $REPO_URL…"
+  git clone "$REPO_URL" "$APP_DIR"
+  echo "✓ Dépôt cloné dans $APP_DIR"
+fi
+
 mkdir -p "$APP_DIR/data"
-echo "✓ Fichiers copiés dans $APP_DIR"
 
 # ── Installe les dépendances ──────────────────────────────────────────────────
 cd "$APP_DIR"
