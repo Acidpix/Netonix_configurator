@@ -44,12 +44,23 @@ function renderPresetButtons() {
 // Compare la config d'un port contre les presets chargés dynamiquement
 function detectPreset(portCfg) {
   if (!portCfg || portCfg.enabled === false) return 'disabled';
-  const portPvid   = portCfg.pvid ?? 1;
-  const portTagged = (portCfg.tagged || []).slice().sort((a, b) => a - b);
+  const portPvid = portCfg.pvid !== undefined ? portCfg.pvid : 1;
 
-  for (const [key, p] of Object.entries(PRESETS)) {
+  // tagged peut être un tableau, un objet {vlanId: true} ou une chaîne
+  let rawTagged = portCfg.tagged || portCfg.vlans_tagged || portCfg.trunk || [];
+  let portTagged;
+  if (Array.isArray(rawTagged)) {
+    portTagged = rawTagged.slice().sort((a, b) => a - b);
+  } else if (typeof rawTagged === 'object') {
+    portTagged = Object.keys(rawTagged).map(Number).sort((a, b) => a - b);
+  } else {
+    portTagged = [];
+  }
+
+  for (const key in PRESETS) {
+    const p = PRESETS[key];
     if (p.pvid !== portPvid) continue;
-    const presetTagged = (p.tagged || []).slice().sort((a, b) => a - b);
+    const presetTagged = (Array.isArray(p.tagged) ? p.tagged : []).slice().sort((a, b) => a - b);
     if (JSON.stringify(presetTagged) === JSON.stringify(portTagged)) return key;
   }
   return null;

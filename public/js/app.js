@@ -120,17 +120,38 @@ async function fetchConfig(silent = false) {
     if (!r.ok) throw new Error(await r.text());
     const cfg = await r.json();
 
-    if (cfg.vlans) setVlans(cfg.vlans);
+    // Debug — vérifier la structure reçue du switch
+    console.group('[fetchConfig] structure reçue');
+    console.log('Clés top-level :', Object.keys(cfg));
+    console.log('cfg.ports :', cfg.ports);
+    console.log('cfg.vlans :', cfg.vlans);
+    console.groupEnd();
+
+    // VLANs — le switch peut retourner un tableau ou un objet indexé
+    if (cfg.vlans) {
+      const vlanList = Array.isArray(cfg.vlans) ? cfg.vlans : Object.values(cfg.vlans);
+      setVlans(vlanList);
+    }
 
     const sw = App.currentSw;
     const pc = getPortCount(sw.model);
-    if (cfg.ports) {
+
+    // Ports — essaie les clés "1","2",... puis "port1","port2",...
+    const portsObj = cfg.ports || cfg.port_config || cfg.portConfig || null;
+    if (portsObj && typeof portsObj === 'object') {
+      // Détecte le préfixe éventuel des clés ("port1" → préfixe "port")
+      const sampleKey = Object.keys(portsObj)[0] || '';
+      const prefix    = sampleKey.replace(/\d+$/, '');
+
       for (let i = 1; i <= pc; i++) {
-        const raw = cfg.ports[String(i)];
-        const detected = detectPreset(raw);
-        portStates[i]       = detected === null ? 'unknown' : detected;
-        portDescriptions[i] = raw?.description || '';
-        portRawConfigs[i]   = raw || null;
+        const raw = portsObj[String(i)] || portsObj[prefix + i] || null;
+        let detected = null;
+        try { detected = detectPreset(raw); } catch (err) {
+          console.warn('detectPreset port ' + i + ':', err, raw);
+        }
+        portStates[i]       = raw === null ? null : (detected === null ? 'unknown' : detected);
+        portDescriptions[i] = (raw && raw.description) || '';
+        portRawConfigs[i]   = raw;
       }
     }
 
