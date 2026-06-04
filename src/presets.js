@@ -25,7 +25,7 @@ function toPortConfig(key) {
  */
 function detectPreset(portCfg) {
   if (!portCfg || portCfg.enabled === false) return 'disabled';
-  const portPvid   = portCfg.pvid ?? 1;
+  const portPvid   = portCfg.pvid !== undefined ? portCfg.pvid : 1;
   const portTagged = (portCfg.tagged || []).slice().sort((a, b) => a - b);
   const presets    = presetsStore.loadAll();
 
