@@ -102,7 +102,10 @@
           <!-- Grille de ports -->
           <div>
             <div class="card">
-              <div class="card-title">Ports</div>
+              <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+                Ports
+                <button id="btn-color-mode" class="btn btn-ghost" onclick="togglePortColorMode()" style="font-size:10px;padding:2px 8px">Couleur: Preset</button>
+              </div>
               <div id="port-grid"></div>
               <div style="margin-top:10px;font-size:11px;color:var(--text3)">
                 Clic gauche : sélectionner · Clic droit : tout désélectionner

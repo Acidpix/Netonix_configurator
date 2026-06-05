@@ -107,6 +107,7 @@ select option { background: var(--bg3); }
 .port-cell { background: var(--bg3); border: 1.5px solid var(--border); border-radius: var(--r); cursor: pointer; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: all .12s; position: relative; user-select: none; }
 .port-cell:hover { border-color: var(--border2); }
 .port-cell.selected  { border-color: var(--accent); background: rgba(59,130,246,.1); }
+.port-cell.drag-over { outline: 2px dashed var(--accent); outline-offset: -3px; background: rgba(59,130,246,.18) !important; }
 .port-cell.p-cam     { border-color: var(--pink);   background: rgba(236,72,153,.08); }
 .port-cell.p-ap      { border-color: var(--accent); background: rgba(59,130,246,.08); }
 .port-cell.p-uplink  { border-color: var(--teal);   background: rgba(20,184,166,.08); }

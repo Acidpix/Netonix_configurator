@@ -32,7 +32,13 @@ function renderPresetButtons() {
   Object.entries(PRESETS).forEach(([key, p]) => {
     const btn = document.createElement('button');
     btn.className = `preset-btn preset-${key}`;
+    btn.draggable = true;
+    btn.title = 'Cliquer ou glisser sur un port';
     btn.onclick = () => applyPreset(key);
+    btn.ondragstart = (e) => {
+      e.dataTransfer.setData('preset-key', key);
+      e.dataTransfer.effectAllowed = 'copy';
+    };
     btn.innerHTML = `
       <span class="preset-dot" style="background:${p.color}"></span>
       ${p.label}

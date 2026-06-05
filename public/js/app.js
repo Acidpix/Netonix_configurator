@@ -166,9 +166,15 @@ async function fetchConfig(silent = false) {
         if (!portNum || portNum > pc) return;
         var vlanInfo = portVlan[portNum] || { pvid: 1, tagged: [] };
         var nativePoe = portObj.PoE || portObj.poe || 'Off';
+        var _poeUp = nativePoe.toUpperCase();
+        var normalPoe = _poeUp === 'OFF' || !nativePoe ? false
+          : (_poeUp === '48VH' || _poeUp === '48VHV') ? '48VH'
+          : _poeUp === '48V' ? '48v'
+          : _poeUp === '24V' ? '24v'
+          : false;
         var raw = {
           enabled      : portObj.Enable !== false,
-          poe          : nativePoe === 'Off' ? false : nativePoe.toLowerCase().replace('vh', 'HV'),
+          poe          : normalPoe,
           pvid         : vlanInfo.pvid || 1,
           tagged       : vlanInfo.tagged,
           description  : portObj.Name || portObj.name || '',
@@ -211,7 +217,16 @@ function populateSwInfo(cfg, sw) {
   document.getElementById('swi-name').value     = cfg.Switch_Name     || (sw && sw.name)     || '';
   document.getElementById('swi-location').value = cfg.Switch_Location || (sw && sw.location) || '';
   document.getElementById('swi-snmp').value     = cfg.SNMP_Server_Location || (sw && sw.snmp_location) || '';
-  document.getElementById('swi-ip').textContent      = cfg.IPv4_Address || (sw && sw.ip) || '—';
+  const _ip    = cfg.IPv4_Address || (sw && sw.ip) || '';
+  const _proto = sw && sw.https !== false ? 'https' : 'http';
+  const _ipEl  = document.getElementById('swi-ip');
+  if (_ip) {
+    _ipEl.innerHTML = `<a href="${_proto}://${_ip}" target="_blank" rel="noopener"
+      style="display:inline-flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;text-decoration:none;font-family:var(--mono)"
+      >${_ip} ↗</a>`;
+  } else {
+    _ipEl.textContent = '—';
+  }
   document.getElementById('swi-model').textContent   = (sw && sw.model) || '—';
   document.getElementById('swi-version').textContent = cfg.Config_Version ? 'v' + cfg.Config_Version : '—';
   document.getElementById('swi-save-btn').style.display = 'none';
@@ -281,12 +296,18 @@ async function loadPortLinkStats(switchId, portCount) {
         const r = await fetch(`/api/switches/${switchId}/stats/${portNum}`);
         if (!r.ok) return;
         const d = await r.json();
-        // Champs possibles selon le firmware Netonix
-        const speedRaw = d.Speed || d.speed || d.Link_Speed || d.link_speed || d.Rx_Speed || '';
+        const speedRaw = d.Speed || d.speed || d.Link_Speed || d.link_speed || d.Rx_Speed || d.Bandwidth || '';
         const linkUp   = d.Link === 'Up' || d.link === 'Up' || d.Status === 'Up'
-                      || d.Link_Status === 'Up' || d.Connected === true || speedRaw !== '';
-        const speed    = parseInt(String(speedRaw).replace(/[^\d]/g, '')) || 0;
-        portLinkStats[portNum] = { up: linkUp && speed > 0, speed };
+                      || d.Link_Status === 'Up' || d.Connected === true
+                      || String(speedRaw).trim() !== '';
+        // Parser la vitesse : "1G" / "1000Mbps" / "100M" / "1000" → Mbps
+        const sr = String(speedRaw).toLowerCase();
+        let speed = 0;
+        if (sr.includes('1000') || sr === '1g' || sr === '1gbps' || sr === '1000mbps') speed = 1000;
+        else if ((sr.includes('100') && !sr.includes('1000')) || sr === '100m' || sr === '100mbps') speed = 100;
+        else if (sr.includes('10') || sr === '10m' || sr === '10mbps') speed = 10;
+        else speed = parseInt(sr.replace(/[^\d]/g, '')) || 0;
+        portLinkStats[portNum] = { up: linkUp, speed };
       } catch {}
     }));
     // Met à jour l'affichage après chaque batch
