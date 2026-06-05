@@ -353,23 +353,68 @@ function _buildVlanRows(portNum, pvid, tagged) {
     `<option value="${v.id}" ${v.id === pvid ? 'selected' : ''}>${v.id} – ${v.name}</option>`
   ).join('');
 
-  const tagChecks = vlanList.map(v =>
-    `<label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;white-space:nowrap;padding:1px 0">
-      <input type="checkbox" style="width:auto;margin:0" ${tagged.includes(v.id) ? 'checked' : ''}
-        onchange="toggleTaggedVlan(${portNum},${v.id},this.checked)" />
-      <span style="color:var(--text3);font-family:var(--mono)">${v.id}</span> ${v.name}
-    </label>`
-  ).join('');
+  const tagLabel = tagged.length ? tagged.join(', ') : '— aucun';
 
   return `
-    <div class="detail-row">
+    <div class="detail-row" style="align-items:center">
       <span class="dl">VLAN natif (PVID)</span>
-      <select style="${s}" onchange="updatePortField(${portNum},'pvid',+this.value)">${pvidOpts}</select>
+      <select style="${s};max-width:140px" onchange="updatePortField(${portNum},'pvid',+this.value)">${pvidOpts}</select>
     </div>
-    <div class="detail-row" style="align-items:flex-start">
-      <span class="dl" style="padding-top:2px">VLANs taggés</span>
-      <div style="display:flex;flex-direction:column;gap:1px;max-height:100px;overflow-y:auto;padding-right:2px">${tagChecks}</div>
+    <div class="detail-row" style="align-items:center">
+      <span class="dl">VLANs taggés</span>
+      <button id="tagged-btn-${portNum}" class="btn btn-ghost"
+        style="font-size:11px;padding:3px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        onclick="openTaggedPicker(event,${portNum})">${tagLabel}</button>
     </div>`;
+}
+
+function openTaggedPicker(event, portNum) {
+  const vlanList = typeof getVlans === 'function' ? getVlans() : [];
+  const tagged   = (portRawConfigs[portNum] && portRawConfigs[portNum].tagged) || [];
+
+  let picker = document.getElementById('vlan-tagged-picker');
+  if (!picker) {
+    picker = document.createElement('div');
+    picker.id = 'vlan-tagged-picker';
+    picker.style.cssText = [
+      'position:fixed;z-index:2000',
+      'background:var(--bg3);border:1px solid var(--border2)',
+      'border-radius:var(--r2);padding:10px 12px',
+      'min-width:190px;max-height:260px;overflow-y:auto',
+      'box-shadow:0 6px 24px rgba(0,0,0,.5)',
+    ].join(';');
+    document.body.appendChild(picker);
+  }
+
+  picker.innerHTML = `
+    <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">VLANs taggés</div>
+    ${vlanList.map(v => `
+      <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)">
+        <input type="checkbox" style="width:auto;flex-shrink:0" ${tagged.includes(v.id) ? 'checked' : ''}
+          onchange="toggleTaggedVlan(${portNum},${v.id},this.checked)" />
+        <span style="font-family:var(--mono);color:var(--text3);font-size:11px;min-width:28px">${v.id}</span>
+        <span style="color:var(--text)">${v.name}</span>
+      </label>`).join('')}
+  `;
+
+  // Positionnement sous le bouton
+  const rect = event.currentTarget.getBoundingClientRect();
+  const left = Math.min(rect.left, window.innerWidth - 210);
+  const top  = rect.bottom + 6;
+  picker.style.left    = left + 'px';
+  picker.style.top     = top  + 'px';
+  picker.style.display = 'block';
+
+  // Fermeture au clic extérieur
+  setTimeout(function() {
+    function close(e) {
+      if (!picker.contains(e.target) && e.target !== event.currentTarget) {
+        picker.style.display = 'none';
+        document.removeEventListener('mousedown', close);
+      }
+    }
+    document.addEventListener('mousedown', close);
+  }, 10);
 }
 
 function toggleTaggedVlan(portNum, vlanId, checked) {
@@ -381,6 +426,11 @@ function toggleTaggedVlan(portNum, vlanId, checked) {
   else if (!checked) tagged = tagged.filter(v => v !== vlanId);
   portRawConfigs[portNum].tagged = tagged.sort((a, b) => a - b);
   updatePortField(portNum, 'tagged', portRawConfigs[portNum].tagged);
+  // Mettre à jour le label du bouton sans fermer le picker
+  const btn = document.getElementById('tagged-btn-' + portNum);
+  if (btn) btn.textContent = portRawConfigs[portNum].tagged.length
+    ? portRawConfigs[portNum].tagged.join(', ')
+    : '— aucun';
 }
 
 function showPortDetail(key, ports) {

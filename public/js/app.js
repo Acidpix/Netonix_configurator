@@ -7,8 +7,25 @@ window.App = {
   get currentSw() { return this.switches.find(s => s.id === this.currentId) || null; },
 };
 
+// ── Thème clair / sombre ──────────────────────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle('light');
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  const btn = document.getElementById('btn-theme');
+  if (btn) btn.textContent = isLight ? '☀' : '☾';
+}
+
+function applyStoredTheme() {
+  if (localStorage.getItem('theme') === 'light') {
+    document.documentElement.classList.add('light');
+    const btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = '☀';
+  }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function init() {
+  applyStoredTheme();
   await Promise.all([initPresets(), initModels(), initVlanPresets()]);
   renderVlanPresetButtons();
   await loadSwitches();
@@ -284,33 +301,48 @@ async function saveSwInfo() {
 
 // ── Stats de lien par port ────────────────────────────────────────────────
 async function loadPortLinkStats(switchId, portCount) {
-  // Charge les stats de tous les ports en parallèle (4 à la fois)
-  const BATCH = 4;
-  const sw    = App.currentSw;
+  const BATCH   = 4;
+  const sw      = App.currentSw;
+  let _firstLog = true;
   for (let i = 1; i <= portCount; i += BATCH) {
-    if (App.currentId !== switchId) return; // switch changé entretemps
+    if (App.currentId !== switchId) return;
     const batch = [];
     for (let j = i; j < i + BATCH && j <= portCount; j++) batch.push(j);
     await Promise.all(batch.map(async portNum => {
       try {
         const r = await fetch(`/api/switches/${switchId}/stats/${portNum}`);
-        if (!r.ok) return;
-        const d = await r.json();
-        const speedRaw = d.Speed || d.speed || d.Link_Speed || d.link_speed || d.Rx_Speed || d.Bandwidth || '';
-        const linkUp   = d.Link === 'Up' || d.link === 'Up' || d.Status === 'Up'
-                      || d.Link_Status === 'Up' || d.Connected === true
-                      || String(speedRaw).trim() !== '';
-        // Parser la vitesse : "1G" / "1000Mbps" / "100M" / "1000" → Mbps
+        if (!r.ok) { console.warn('[portStats] port', portNum, '→ HTTP', r.status); return; }
+        const raw = await r.json();
+
+        // Le switch peut retourner un tableau de tous les ports ou un objet unique
+        let d = Array.isArray(raw)
+          ? (raw.find(p => (p.Number ?? p.number ?? p.Port ?? p.port) == portNum) || raw[portNum - 1] || {})
+          : raw;
+
+        // Log de debug : affiche la structure du premier port dans la console navigateur
+        if (_firstLog) { console.log('[portdetail raw]', JSON.stringify(d)); _firstLog = false; }
+
+        const speedRaw = d.Speed ?? d.speed ?? d.Link_Speed ?? d.link_speed ??
+                         d.Rx_Speed ?? d.Bandwidth ?? d.bandwidth ?? d.Rate ?? '';
+
+        const linkStr = String(d.Link ?? d.link ?? d.Status ?? d.status ?? d.Link_Status ?? '').toLowerCase();
+        const linkUp  = linkStr === 'up' || linkStr === 'connected' || linkStr === 'active'
+                     || d.Connected === true || d.connected === true
+                     || d.Link_Up === true || d.link_up === true
+                     || (String(speedRaw).trim() !== '' && Number(speedRaw) > 0);
+
         const sr = String(speedRaw).toLowerCase();
         let speed = 0;
         if (sr.includes('1000') || sr === '1g' || sr === '1gbps' || sr === '1000mbps') speed = 1000;
-        else if ((sr.includes('100') && !sr.includes('1000')) || sr === '100m' || sr === '100mbps') speed = 100;
-        else if (sr.includes('10') || sr === '10m' || sr === '10mbps') speed = 10;
+        else if (sr.includes('100') && !sr.includes('1000'))                            speed = 100;
+        else if (sr.includes('10') && !sr.includes('100'))                              speed = 10;
         else speed = parseInt(sr.replace(/[^\d]/g, '')) || 0;
+
         portLinkStats[portNum] = { up: linkUp, speed };
-      } catch {}
+      } catch (e) {
+        console.warn('[portStats] port', portNum, e.message);
+      }
     }));
-    // Met à jour l'affichage après chaque batch
     if (App.currentId === switchId && sw) renderPortGrid(portCount);
   }
 }

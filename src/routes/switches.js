@@ -144,13 +144,19 @@ router.post('/:id/reboot', async (req, res) => {
 });
 
 // GET /api/switches/:id/stats/:port — stats temps réel d'un port
+var _portStatsLogged = false;
 router.get('/:id/stats/:port', async (req, res) => {
   const sw = store.findById(req.params.id);
   if (!sw) return res.status(404).json({ error: 'Switch introuvable' });
   try {
     const data = await nx.portStats(sw, req.params.port);
+    if (!_portStatsLogged) {
+      console.log('[portdetail] port', req.params.port, '->', JSON.stringify(data));
+      _portStatsLogged = true;
+    }
     res.json(data);
   } catch (e) {
+    console.error('[portStats] port', req.params.port, ':', e.message);
     res.status(500).json({ error: e.message });
   }
 });
