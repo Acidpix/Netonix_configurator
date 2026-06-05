@@ -238,7 +238,11 @@ async function pushConfig(sw, patch) {
   });
 
   // ── 3. Merge et envoi ─────────────────────────────────────────────────────
+  // Copie les champs libres du patch (Switch_Name, Switch_Location, etc.)
   var merged = Object.assign({}, config, { Ports: nativePorts, VLANs: nativeVlans });
+  Object.keys(patch).forEach(function(k) {
+    if (k !== 'ports' && k !== 'vlans') merged[k] = patch[k];
+  });
   await post(sw, '/api/v1/config', merged, auth);
   await post(sw, '/api/v1/apply', {}, auth);
 }

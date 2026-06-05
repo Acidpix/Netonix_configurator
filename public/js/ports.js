@@ -161,8 +161,8 @@ function togglePort(i) {
   });
 
   if (selectedPorts.size === 1) {
-    const key = portStates[[...selectedPorts][0]];
-    key ? showPortDetail(key, [...selectedPorts]) : showFreePortDetail([...selectedPorts]);
+    const portNum = [...selectedPorts][0];
+    showPortDetail(portStates[portNum], [portNum]);
   } else if (selectedPorts.size > 1) {
     showMultiPortDetail([...selectedPorts]);
   } else {
@@ -258,71 +258,109 @@ function cancelPresetApply() {
 
 // ── Panneaux de détail ────────────────────────────────────────────────────────
 
-function showPortDetail(key, ports) {
-  const preset     = key && key !== 'unknown' ? PRESETS[key] : null;
-  const panel      = document.getElementById('detail-panel');
-  panel.style.display = 'block';
-
-  const singlePort = ports.length === 1 ? ports[0] : null;
-  const curDesc    = singlePort ? (portDescriptions[singlePort] || '') : '';
-  const raw        = singlePort ? portRawConfigs[singlePort] : null;
-  const cfg        = preset || raw; // source : preset assigné ou config brute switch
-
-  if (!cfg) return showFreePortDetail(ports);
-
-  const pvid   = preset ? preset.pvid   : (raw.pvid !== undefined ? raw.pvid : 1);
-  const tagged = preset ? (preset.tagged || []) : (Array.isArray(raw.tagged) ? raw.tagged : []);
-  const poe    = preset ? preset.poe    : raw.poe;
-  const color  = preset ? preset.color  : 'var(--border)';
-  const label  = preset ? preset.label  : ('VLAN ' + pvid);
-
-  panel.innerHTML = `
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
-      <span class="preset-dot" style="background:${color};width:10px;height:10px;border-radius:2px;display:inline-block"></span>
-      ${label} — Port${ports.length > 1 ? 's' : ''} ${ports.join(', ')}
-      ${!preset ? '<span style="font-size:10px;color:var(--text3);font-weight:400">(config switch)</span>' : ''}
-    </div>
-    <div class="detail-row"><span class="dl">VLAN natif (PVID)</span><span class="dv">VLAN ${pvid}</span></div>
-    <div class="detail-row"><span class="dl">VLANs taggés</span><span class="dv">${tagged.length ? tagged.map(v => 'VLAN ' + v).join(', ') : '—'}</span></div>
-    <div class="detail-row"><span class="dl">PoE</span><span class="dv" style="color:${poe && poe !== false ? 'var(--green)' : 'var(--text3)'}">${poe && poe !== false ? poe : 'OFF'}</span></div>
-    ${(preset && preset.storm_control) || (raw && raw.storm_control) ? '<div class="detail-row"><span class="dl">Storm-control</span><span class="dv">ON</span></div>' : ''}
-    ${(preset && preset.stp) || (raw && raw.stp) ? '<div class="detail-row"><span class="dl">STP portfast</span><span class="dv">ON</span></div>' : ''}
-    ${(preset && preset.qos) || (raw && raw.qos) ? '<div class="detail-row"><span class="dl">QoS DSCP</span><span class="dv">ON</span></div>' : ''}
-    ${singlePort !== null ? `
-    <div class="detail-row" style="border:none;margin-top:6px">
-      <span class="dl">Description</span>
-      <input id="port-desc-input" value="${curDesc}" placeholder="(optionnel)"
-        style="background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);width:140px"
-        oninput="portDescriptions[${singlePort}] = this.value; renderPortGrid(getPortCount(window.App?.currentSw?.model))" />
-    </div>
-    ` : ''}
-    ${preset ? `
-    <div style="margin-top:10px">
-      <button class="btn btn-ghost" onclick="clearPreset(${JSON.stringify(ports)})" style="font-size:11px">Effacer preset</button>
-    </div>
-    ` : ''}
-  `;
+function _inputStyle() {
+  return 'background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text)';
 }
 
-function showFreePortDetail(ports) {
+function showPortDetail(key, ports) {
   const panel = document.getElementById('detail-panel');
   panel.style.display = 'block';
-  const singlePort = ports.length === 1 ? ports[0] : null;
-  const curDesc    = singlePort ? (portDescriptions[singlePort] || '') : '';
 
+  // Multi-sélection : pas d'édition individuelle
+  if (ports.length > 1) return showMultiPortDetail(ports);
+
+  const portNum = ports[0];
+  const preset  = key && key !== 'unknown' ? PRESETS[key] : null;
+  const raw     = portRawConfigs[portNum] || null;
+  const link    = portLinkStats[portNum]  || null;
+
+  // Config effective (preset ou raw) pour pré-remplir les champs
+  const cfg = preset || raw || {};
+  const pvid      = cfg.pvid   !== undefined ? cfg.pvid   : 1;
+  const tagged    = Array.isArray(cfg.tagged) ? cfg.tagged : [];
+  const poe       = cfg.poe    !== undefined ? cfg.poe    : false;
+  const enabled   = cfg.enabled !== false;
+  const sc        = !!cfg.storm_control;
+  const stp       = !!cfg.stp;
+  const qos       = !!cfg.qos;
+  const desc      = portDescriptions[portNum] || cfg.description || '';
+  const color     = preset ? preset.color : (raw ? 'var(--border)' : 'var(--border2)');
+  const label     = preset ? preset.label : (raw ? 'VLAN ' + pvid : 'Libre');
+  const poeVal    = poe === false ? 'false' : String(poe);
+  const taggedStr = tagged.join(', ');
+
+  // Badge lien
+  let linkHtml = '<span style="color:var(--text3);font-size:10px">—</span>';
+  if (link) {
+    if (!link.up) linkHtml = '<span style="color:var(--text3);font-size:11px">↓ Déconnecté</span>';
+    else if (link.speed >= 1000) linkHtml = '<span style="color:var(--green);font-size:11px">↑ 1 Gb/s</span>';
+    else if (link.speed >= 100)  linkHtml = '<span style="color:var(--amber);font-size:11px">↑ 100 Mb/s</span>';
+    else                         linkHtml = '<span style="color:var(--red);font-size:11px">↑ 10 Mb/s</span>';
+  }
+
+  const s = _inputStyle();
   panel.innerHTML = `
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px;color:var(--text2)">
-      Port${ports.length > 1 ? 's' : ''} ${ports.join(', ')} — Libre
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span class="preset-dot" style="background:${color};width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0"></span>
+      <span style="font-weight:600;font-size:13px">${label} — Port ${portNum}</span>
+      <span style="margin-left:auto">${linkHtml}</span>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Aucun preset appliqué. Choisissez un preset dans la liste.</div>
-    ${singlePort !== null ? `
+
+    <div class="detail-row" style="align-items:center">
+      <span class="dl">État</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px">
+        <input type="checkbox" style="width:auto" ${enabled ? 'checked' : ''}
+          onchange="updatePortField(${portNum},'enabled',this.checked)" />
+        <span style="color:${enabled ? 'var(--green)' : 'var(--text3)'}">${enabled ? 'Activé' : 'Désactivé'}</span>
+      </label>
+    </div>
+
+    <div class="detail-row">
+      <span class="dl">PoE</span>
+      <select style="${s}" onchange="updatePortField(${portNum},'poe',this.value==='false'?false:this.value)">
+        <option value="false" ${poeVal==='false'?'selected':''}>OFF</option>
+        <option value="24v"   ${poeVal==='24v'?'selected':''}>24V</option>
+        <option value="48v"   ${poeVal==='48v'?'selected':''}>48V</option>
+        <option value="48vHV" ${poeVal==='48vHV'||poeVal==='48VH'?'selected':''}>48VH</option>
+      </select>
+    </div>
+
+    <div class="detail-row">
+      <span class="dl">VLAN natif (PVID)</span>
+      <input type="number" value="${pvid}" min="1" max="4094" style="${s};width:70px"
+        onchange="updatePortField(${portNum},'pvid',+this.value)" />
+    </div>
+
+    <div class="detail-row">
+      <span class="dl">VLANs taggés</span>
+      <input type="text" value="${taggedStr}" placeholder="10,20,30" style="${s};width:120px"
+        onchange="updatePortField(${portNum},'tagged',this.value.split(',').map(function(v){return parseInt(v.trim());}).filter(function(n){return n>0;}))" />
+    </div>
+
     <div class="detail-row" style="border:none">
       <span class="dl">Description</span>
-      <input id="port-desc-input" value="${curDesc}" placeholder="(optionnel)"
-        style="background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);width:140px"
-        oninput="portDescriptions[${singlePort}] = this.value; renderPortGrid(getPortCount(window.App?.currentSw?.model))" />
+      <input value="${desc}" placeholder="(optionnel)" style="${s};width:130px"
+        oninput="updatePortField(${portNum},'description',this.value)" />
     </div>
-    ` : ''}
+
+    <div style="display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
+        <input type="checkbox" style="width:auto" ${sc?'checked':''}
+          onchange="updatePortField(${portNum},'storm_control',this.checked)" /> Storm-ctrl
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
+        <input type="checkbox" style="width:auto" ${stp?'checked':''}
+          onchange="updatePortField(${portNum},'stp',this.checked)" /> STP
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
+        <input type="checkbox" style="width:auto" ${qos?'checked':''}
+          onchange="updatePortField(${portNum},'qos',this.checked)" /> QoS
+      </label>
+    </div>
+
+    ${preset ? `<div style="margin-top:10px">
+      <button class="btn btn-ghost" onclick="clearPreset([${portNum}])" style="font-size:11px">Effacer preset</button>
+    </div>` : ''}
   `;
 }
 
@@ -344,9 +382,12 @@ function hidePortDetail() {
 // ── Effacement preset ─────────────────────────────────────────────────────────
 
 function clearPreset(ports) {
-  ports.forEach(p => { portStates[p] = null; });
-  const currentSw = window.App?.currentSw;
-  renderPortGrid(getPortCount(currentSw?.model));
+  ports.forEach(function(p) {
+    // Garde la config brute mais efface le preset — le port devient 'unknown'
+    portStates[p] = portRawConfigs[p] ? 'unknown' : null;
+  });
+  const sw = window.App && window.App.currentSw;
+  renderPortGrid(getPortCount(sw ? sw.model : null));
   hidePortDetail();
   clearPortSelection();
 }
@@ -386,12 +427,40 @@ function resetPortStates() {
   selectedPorts.clear();
 }
 
+// Met à jour un champ de la config brute d'un port et recalcule son état
+function updatePortField(portNum, field, value) {
+  if (!portRawConfigs[portNum]) {
+    portRawConfigs[portNum] = { enabled: true, poe: false, pvid: 1, tagged: [], stp: false, storm_control: false, qos: false, description: '' };
+  }
+  portRawConfigs[portNum][field] = value;
+  if (field === 'description') portDescriptions[portNum] = value;
+
+  let detected = null;
+  try { detected = detectPreset(portRawConfigs[portNum]); } catch (e) {}
+  portStates[portNum] = portRawConfigs[portNum].enabled === false
+    ? 'disabled'
+    : (detected === null ? 'unknown' : detected);
+
+  const sw = window.App && window.App.currentSw;
+  renderPortGrid(getPortCount(sw ? sw.model : null));
+}
+
+// buildPortsPayload utilise portRawConfigs directement (plus de lookup de preset)
 function buildPortsPayload(count) {
   const payload = {};
   for (let i = 1; i <= count; i++) {
-    if (portStates[i] && portStates[i] !== 'unknown') {
-      payload[String(i)] = { preset: portStates[i], description: portDescriptions[i] || null };
-    }
+    const raw = portRawConfigs[i];
+    if (!raw) continue;
+    payload[String(i)] = {
+      enabled      : raw.enabled !== false,
+      poe          : raw.poe || false,
+      pvid         : raw.pvid || 1,
+      tagged       : raw.tagged || [],
+      description  : portDescriptions[i] || raw.description || '',
+      storm_control: raw.storm_control || false,
+      stp          : raw.stp || false,
+      qos          : raw.qos || false,
+    };
   }
   return payload;
 }

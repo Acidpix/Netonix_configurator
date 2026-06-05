@@ -13,6 +13,10 @@ async function init() {
   renderVlanPresetButtons();
   await loadSwitches();
   setInterval(pingAll, 30000);
+  // Auto-refresh des infos switch toutes les 60s si un switch est sélectionné
+  setInterval(function() {
+    if (App.currentId) fetchConfig(true).catch(function() {});
+  }, 60000);
 }
 
 // ── Inventaire ────────────────────────────────────────────────────────────────
@@ -185,9 +189,12 @@ async function fetchConfig(silent = false) {
       toast(`Modèle détecté : ${cfg._detectedModel} (configuré : ${sw.model})`, 'info');
     }
 
+    // Mettre à jour les infos du switch depuis la config réelle
+    populateSwInfo(cfg, sw);
+
     renderPortGrid(pc);
     document.getElementById('raw-config').textContent = JSON.stringify(cfg, null, 2);
-    if (!silent) toast('Configuration récupérée', 'ok');
+    if (!silent) toast('Synchronisation effectuée', 'ok');
 
     // Chargement des stats de lien en arrière-plan (non bloquant)
     loadPortLinkStats(App.currentId, pc);
@@ -195,6 +202,68 @@ async function fetchConfig(silent = false) {
     toast('Erreur fetch : ' + e.message, 'err');
   } finally {
     setLoading('btn-fetch', false, '↓ Récupérer config');
+  }
+}
+
+// ── Info card switch ──────────────────────────────────────────────────────
+
+function populateSwInfo(cfg, sw) {
+  document.getElementById('swi-name').value     = cfg.Switch_Name     || (sw && sw.name)     || '';
+  document.getElementById('swi-location').value = cfg.Switch_Location || (sw && sw.location) || '';
+  document.getElementById('swi-snmp').value     = cfg.SNMP_Server_Location || (sw && sw.snmp_location) || '';
+  document.getElementById('swi-ip').textContent      = cfg.IPv4_Address || (sw && sw.ip) || '—';
+  document.getElementById('swi-model').textContent   = (sw && sw.model) || '—';
+  document.getElementById('swi-version').textContent = cfg.Config_Version ? 'v' + cfg.Config_Version : '—';
+  document.getElementById('swi-save-btn').style.display = 'none';
+
+  // Mettre à jour le switch en mémoire et la sidebar avec les vraies valeurs
+  if (sw) {
+    if (cfg.Switch_Name)     sw.name     = cfg.Switch_Name;
+    if (cfg.Switch_Location) sw.location = cfg.Switch_Location;
+    renderSidebar();
+    setTopbar(sw, sw._online);
+  }
+}
+
+function markSwInfoDirty() {
+  document.getElementById('swi-save-btn').style.display = '';
+}
+
+async function saveSwInfo() {
+  if (!App.currentId) return;
+  const name     = document.getElementById('swi-name').value.trim();
+  const location = document.getElementById('swi-location').value.trim();
+  const snmp     = document.getElementById('swi-snmp').value.trim();
+
+  setLoading('swi-save-btn', true, 'Sauvegarde…');
+  try {
+    // 1. Pousse les champs vers le switch
+    const rSw = await fetch(`/api/switches/${App.currentId}/config`, {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ Switch_Name: name, Switch_Location: location, SNMP_Server_Location: snmp }),
+    });
+    const dSw = await rSw.json();
+    if (!rSw.ok) throw new Error(dSw.error);
+
+    // 2. Met à jour l'inventaire local (DB)
+    await fetch(`/api/switches/${App.currentId}`, {
+      method : 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ name, location, snmp_location: snmp }),
+    });
+
+    // 3. Met à jour la mémoire et la sidebar
+    const sw = App.currentSw;
+    if (sw) { sw.name = name; sw.location = location; sw.snmp_location = snmp; }
+    renderSidebar();
+    setTopbar(App.currentSw, App.currentSw && App.currentSw._online);
+    document.getElementById('swi-save-btn').style.display = 'none';
+    toast('Informations mises à jour', 'ok');
+  } catch (e) {
+    toast('Erreur : ' + e.message, 'err');
+  } finally {
+    setLoading('swi-save-btn', false, 'Sauvegarder');
   }
 }
 
@@ -228,29 +297,11 @@ async function loadPortLinkStats(switchId, portCount) {
 // ── Push config vers le switch ────────────────────────────────────────────────
 async function pushConfig() {
   if (!App.currentId) return;
-  setLoading('btn-push', true, '↑ Pousser config');
+  setLoading('btn-push', true, '↑ Push conf');
   try {
-    const sw      = App.currentSw;
-    const pc      = getPortCount(sw.model);
-    const portMap = buildPortsPayload(pc);
-
-    const portsPayload = {};
-    Object.entries(portMap).forEach(([num, { preset: presetKey, description }]) => {
-      const p = PRESETS[presetKey];
-      if (!p) return;
-      portsPayload[num] = {
-        enabled      : p.enabled !== false,
-        poe          : p.poe,
-        pvid         : p.pvid,
-        tagged       : p.tagged || [],
-        description  : description || p.description || p.label,
-        storm_control: p.storm_control || false,
-        stp          : p.stp || false,
-        qos          : p.qos || false,
-      };
-    });
-
-    const body = { vlans: buildVlansPayload(), ports: portsPayload };
+    const sw   = App.currentSw;
+    const pc   = getPortCount(sw.model);
+    const body = { vlans: buildVlansPayload(), ports: buildPortsPayload(pc) };
     const r    = await fetch(`/api/switches/${App.currentId}/config`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -262,7 +313,7 @@ async function pushConfig() {
   } catch (e) {
     toast('Erreur push : ' + e.message, 'err');
   } finally {
-    setLoading('btn-push', false, '↑ Pousser config');
+    setLoading('btn-push', false, '↑ Push conf');
   }
 }
 

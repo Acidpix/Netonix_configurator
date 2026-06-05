@@ -12,16 +12,16 @@
 <div id="sidebar">
   <div class="sidebar-header">
     <div class="logo">N</div>
-    <div>
+    <div style="flex:1;min-width:0">
       <div class="sidebar-title">Netonix Manager</div>
       <div class="sidebar-subtitle" id="sw-count">…</div>
     </div>
+    <button class="btn-settings" onclick="openSettings()" title="Paramètres">&#9881;</button>
   </div>
   <div id="sw-list"></div>
   <div class="sidebar-footer">
     <button class="btn-add-sw" onclick="openAddModal()">＋ Ajouter un switch</button>
-    <button class="btn-add-sw" onclick="openScan()" style="margin-top:4px">&#8981; Scan réseau</button>
-    <button class="btn-settings" onclick="openSettings()" title="Paramètres">&#9881;</button>
+    <button class="btn-add-sw" onclick="openScan()">&#8981; Scan réseau</button>
   </div>
 </div>
 
@@ -36,16 +36,16 @@
     </div>
     <span class="topbar-badge" id="tb-status"></span>
     <div class="spacer"></div>
-    <button class="btn btn-ghost"   id="btn-fetch" onclick="fetchConfig()"   disabled>↓ Récupérer config</button>
-    <button class="btn btn-amber"   id="btn-reset" onclick="confirmReset()"  disabled>↺ Reset propre</button>
-    <button class="btn btn-primary" id="btn-push"  onclick="pushConfig()"    disabled>↑ Pousser config</button>
+    <button class="btn btn-ghost"   id="btn-fetch" onclick="fetchConfig()"   disabled>↓ Sync conf</button>
+    <button class="btn btn-amber"   id="btn-reset" onclick="confirmReset()"  disabled>↺ Reset device</button>
+    <button class="btn btn-primary" id="btn-push"  onclick="pushConfig()"    disabled>↑ Push conf</button>
     <button class="btn btn-ghost"   id="btn-edit"  onclick="openEditModal()" disabled style="padding:6px 8px" title="Modifier">&#9881;</button>
     <button class="btn btn-danger"  id="btn-del"   onclick="deleteSwitch()"  disabled style="padding:6px 8px" title="Supprimer">✕</button>
   </div>
 
   <!-- Tabs -->
   <div id="tabs">
-    <div class="tab active"  onclick="showTab('ports')">Ports</div>
+    <div class="tab active"  onclick="showTab('ports')">Switch</div>
     <div class="tab"         onclick="showTab('vlans')">VLANs</div>
     <div class="tab"         onclick="showTab('raw')">Config brute</div>
   </div>
@@ -62,6 +62,41 @@
       </div>
 
       <div id="ports-section" style="display:none">
+
+        <!-- Card infos switch -->
+        <div class="card" id="sw-info-card" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin:0">Informations</div>
+            <button id="swi-save-btn" class="btn btn-primary" onclick="saveSwInfo()" style="display:none;font-size:11px">Sauvegarder</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+            <div>
+              <div class="swi-label">Nom</div>
+              <input id="swi-name" style="width:100%" oninput="markSwInfoDirty()" />
+            </div>
+            <div>
+              <div class="swi-label">Localisation</div>
+              <input id="swi-location" style="width:100%" oninput="markSwInfoDirty()" />
+            </div>
+            <div>
+              <div class="swi-label">Localisation SNMP</div>
+              <input id="swi-snmp" style="width:100%" oninput="markSwInfoDirty()" />
+            </div>
+            <div>
+              <div class="swi-label">Adresse IP</div>
+              <div class="swi-value" id="swi-ip">—</div>
+            </div>
+            <div>
+              <div class="swi-label">Modèle</div>
+              <div class="swi-value" id="swi-model">—</div>
+            </div>
+            <div>
+              <div class="swi-label">Version firmware</div>
+              <div class="swi-value" id="swi-version">—</div>
+            </div>
+          </div>
+        </div>
+
         <div class="row2" style="align-items:start">
 
           <!-- Grille de ports -->
