@@ -1,7 +1,14 @@
 'use strict';
 
-const { randomUUID } = require('crypto');
-const db = require('./db');
+const crypto = require('crypto');
+const db     = require('./db');
+
+function randomUUID() {
+  var b = crypto.randomBytes(16);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  return b.toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+}
 
 function _row(r) {
   if (!r) return null;
