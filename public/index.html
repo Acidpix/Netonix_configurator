@@ -139,7 +139,10 @@
           <div class="card-title" style="margin:0">Presets VLAN</div>
           <button class="btn btn-ghost" onclick="openVlanPresetsSettings()" style="font-size:11px">⚙️ Gérer</button>
         </div>
-        <div id="vlan-preset-buttons" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div id="vlan-preset-buttons" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+          <button id="btn-apply-vlan-preset" class="btn btn-primary" onclick="confirmApplyVlanPreset()" style="display:none;font-size:11px">Appliquer</button>
+        </div>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">

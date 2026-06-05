@@ -1,6 +1,7 @@
 'use strict';
 
 let VLAN_PRESETS = [];
+let _pendingVlanPreset = null;
 
 async function initVlanPresets() {
   try {
@@ -22,18 +23,39 @@ function renderVlanPresetButtons() {
     btn.style.fontSize = '11px';
     btn.style.padding = '4px 8px';
     btn.title = p.description;
+    btn.dataset.presetKey = p.key;
     btn.innerHTML = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${p.color};margin-right:4px"></span>${p.label}`;
-    btn.onclick = () => applyVlanPreset(p);
+    btn.onclick = () => selectVlanPreset(p);
     container.appendChild(btn);
   });
+  _pendingVlanPreset = null;
+  const applyBtn = document.getElementById('btn-apply-vlan-preset');
+  if (applyBtn) applyBtn.style.display = 'none';
 }
 
-function applyVlanPreset(preset) {
+function selectVlanPreset(preset) {
   if (!preset.vlans || !Array.isArray(preset.vlans) || preset.vlans.length === 0) {
     toast('Preset vide', 'err');
     return;
   }
-  vlans = JSON.parse(JSON.stringify(preset.vlans));
+  _pendingVlanPreset = preset;
+  document.querySelectorAll('#vlan-preset-buttons .btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.presetKey === preset.key);
+  });
+  const applyBtn = document.getElementById('btn-apply-vlan-preset');
+  if (applyBtn) {
+    applyBtn.style.display = '';
+    applyBtn.textContent = `Appliquer « ${preset.label} »`;
+  }
+}
+
+function confirmApplyVlanPreset() {
+  if (!_pendingVlanPreset) return;
+  vlans = JSON.parse(JSON.stringify(_pendingVlanPreset.vlans));
   renderVlanTable();
-  toast(`Preset VLAN "${preset.label}" appliqué`, 'ok');
+  toast(`Preset VLAN « ${_pendingVlanPreset.label} » appliqué`, 'ok');
+  _pendingVlanPreset = null;
+  document.querySelectorAll('#vlan-preset-buttons .btn').forEach(btn => btn.classList.remove('active'));
+  const applyBtn = document.getElementById('btn-apply-vlan-preset');
+  if (applyBtn) applyBtn.style.display = 'none';
 }

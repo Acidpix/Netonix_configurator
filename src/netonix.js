@@ -85,10 +85,10 @@ async function login(sw) {
 }
 
 /**
- * GET JSON depuis le switch.
+ * GET JSON depuis le switch. Si auth est fourni, réutilise la session existante.
  */
-async function get(sw, endpoint) {
-  var auth = await login(sw);
+async function get(sw, endpoint, auth) {
+  if (!auth) auth = await login(sw);
   var res  = await fetch(baseUrl(sw) + endpoint, {
     headers : auth,
     agent   : agent(sw),
@@ -148,7 +148,7 @@ function toNativePoe(poe) {
  */
 async function pushConfig(sw, patch) {
   var auth   = await login(sw);
-  var result = await get(sw, '/api/v1/config');
+  var result = await get(sw, '/api/v1/config', auth);
   var config = result.data;
 
   // Cloner les tableaux natifs
@@ -253,7 +253,7 @@ async function pushConfig(sw, patch) {
 async function resetConfig(sw, options) {
   if (!options) options = {};
   var auth     = await login(sw);
-  var result   = await get(sw, '/api/v1/config');
+  var result   = await get(sw, '/api/v1/config', auth);
   var config   = result.data;
   var newConfig = {
     Switch_Name : config.Switch_Name || config.hostname,
