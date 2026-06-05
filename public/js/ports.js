@@ -5,7 +5,26 @@ let MODEL_PORTS = {};   // { key: portCount } — chargé depuis /api/models
 let portStates       = {};  // { portNum: presetKey | 'unknown' | null }
 let portDescriptions = {};  // { portNum: string }
 let portRawConfigs   = {};  // { portNum: rawPortCfg } — config brute du switch
+let portLinkStats    = {};  // { portNum: { speed: '1000'|'100'|'10'|null, up: bool } }
 let selectedPorts    = new Set();
+
+function poeBadgeHtml(poe) {
+  if (!poe || poe === false || poe === 'false' || poe === 'Off' || poe === 'off') return '';
+  const label = String(poe).toUpperCase().replace('V', 'V').replace('FALSE', '');
+  const cls   = (poe === '48vHV' || poe === '48VH' || String(poe).toUpperCase() === '48VHV' || String(poe).toUpperCase() === '48VH')
+    ? 'badge-poe-red' : 'badge-poe-green';
+  return `<span class="port-badge ${cls}" title="PoE ${label}">${label}</span>`;
+}
+
+function linkBadgeHtml(portNum) {
+  const s = portLinkStats[portNum];
+  if (!s) return '';
+  if (!s.up) return `<span class="port-badge badge-link-down" title="Lien inactif">↓</span>`;
+  if (s.speed >= 1000) return `<span class="port-badge badge-link-1g"   title="1 Gb/s">1G</span>`;
+  if (s.speed >= 100)  return `<span class="port-badge badge-link-100m" title="100 Mb/s">100M</span>`;
+  if (s.speed > 0)     return `<span class="port-badge badge-link-10m"  title="10 Mb/s">10M</span>`;
+  return `<span class="port-badge badge-link-down" title="Lien inactif">↓</span>`;
+}
 
 let _pendingPresetKey = null; // stocke la clé en attente de confirmation
 
@@ -51,19 +70,19 @@ function renderPortGrid(count) {
     const desc = portDescriptions[i] || '';
 
     // Couleur et label : preset > config brute > Libre
-    let dotColor, cellLabel, poeActive;
+    let dotColor, cellLabel, poeSrc;
     if (p) {
       dotColor  = p.color;
       cellLabel = desc || p.label;
-      poeActive = p.poe && p.poe !== false;
+      poeSrc    = p.poe;
     } else if (raw) {
       dotColor  = 'var(--border)';
       cellLabel = desc || ('VLAN ' + (raw.pvid !== undefined ? raw.pvid : 1));
-      poeActive = raw.poe && raw.poe !== false;
+      poeSrc    = raw.poe;
     } else {
       dotColor  = 'var(--border2)';
       cellLabel = desc || 'Libre';
-      poeActive = false;
+      poeSrc    = null;
     }
 
     const cell = document.createElement('div');
@@ -74,10 +93,10 @@ function renderPortGrid(count) {
     cell.onmouseenter  = e => showPortTooltip(e, i);
     cell.onmouseleave  = () => hidePortTooltip();
     cell.innerHTML = `
-      ${poeActive ? '<div class="poe-dot" title="PoE actif"></div>' : ''}
       <div class="port-color-dot" style="background:${dotColor}"></div>
       <div class="port-num">${i}</div>
       <div class="port-label">${cellLabel}</div>
+      <div class="port-badges">${poeBadgeHtml(poeSrc)}${linkBadgeHtml(i)}</div>
     `;
     grid.appendChild(cell);
   }
@@ -363,6 +382,7 @@ function resetPortStates() {
   portStates       = {};
   portDescriptions = {};
   portRawConfigs   = {};
+  portLinkStats    = {};
   selectedPorts.clear();
 }
 

@@ -188,10 +188,40 @@ async function fetchConfig(silent = false) {
     renderPortGrid(pc);
     document.getElementById('raw-config').textContent = JSON.stringify(cfg, null, 2);
     if (!silent) toast('Configuration récupérée', 'ok');
+
+    // Chargement des stats de lien en arrière-plan (non bloquant)
+    loadPortLinkStats(App.currentId, pc);
   } catch (e) {
     toast('Erreur fetch : ' + e.message, 'err');
   } finally {
     setLoading('btn-fetch', false, '↓ Récupérer config');
+  }
+}
+
+// ── Stats de lien par port ────────────────────────────────────────────────
+async function loadPortLinkStats(switchId, portCount) {
+  // Charge les stats de tous les ports en parallèle (4 à la fois)
+  const BATCH = 4;
+  const sw    = App.currentSw;
+  for (let i = 1; i <= portCount; i += BATCH) {
+    if (App.currentId !== switchId) return; // switch changé entretemps
+    const batch = [];
+    for (let j = i; j < i + BATCH && j <= portCount; j++) batch.push(j);
+    await Promise.all(batch.map(async portNum => {
+      try {
+        const r = await fetch(`/api/switches/${switchId}/stats/${portNum}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        // Champs possibles selon le firmware Netonix
+        const speedRaw = d.Speed || d.speed || d.Link_Speed || d.link_speed || d.Rx_Speed || '';
+        const linkUp   = d.Link === 'Up' || d.link === 'Up' || d.Status === 'Up'
+                      || d.Link_Status === 'Up' || d.Connected === true || speedRaw !== '';
+        const speed    = parseInt(String(speedRaw).replace(/[^\d]/g, '')) || 0;
+        portLinkStats[portNum] = { up: linkUp && speed > 0, speed };
+      } catch {}
+    }));
+    // Met à jour l'affichage après chaque batch
+    if (App.currentId === switchId && sw) renderPortGrid(portCount);
   }
 }
 
@@ -720,11 +750,13 @@ async function startScan() {
   document.getElementById('btn-scan-add').style.display = 'none';
 
   try {
-    const r = await fetch('/api/scan', {
+    const r    = await fetch('/api/scan', {
       method : 'POST', headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify({ subnet }),
     });
-    const d = await r.json();
+    const text = await r.text();
+    let d;
+    try { d = JSON.parse(text); } catch (_) { throw new Error('Réponse invalide du serveur — vérifiez les logs'); }
     if (!r.ok) throw new Error(d.error);
 
     const existingIps = new Set((App.switches || []).map(s => s.ip));

@@ -74,20 +74,26 @@ router.post('/', async (req, res) => {
   const BATCH = 50;
   const found = [];
 
-  for (let i = 0; i < ips.length; i += BATCH) {
-    const batch   = ips.slice(i, i + BATCH);
-    const results = await Promise.all(batch.map(async ip => {
-      let https = false;
-      if (await tcpCheck(ip, 443)) https = true;
-      else if (!(await tcpCheck(ip, 80))) return null;
-
-      const info = await getDeviceInfo(ip, https);
-      return { ip, https, hostname: info.hostname, location: info.location };
-    }));
-    found.push(...results.filter(Boolean));
+  try {
+    for (let i = 0; i < ips.length; i += BATCH) {
+      const batch   = ips.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(async function(ip) {
+        try {
+          var useHttps = false;
+          if (await tcpCheck(ip, 443)) useHttps = true;
+          else if (!(await tcpCheck(ip, 80))) return null;
+          var info = await getDeviceInfo(ip, useHttps);
+          return { ip: ip, https: useHttps, hostname: info.hostname, location: info.location };
+        } catch (e) {
+          return null;
+        }
+      }));
+      found.push.apply(found, results.filter(Boolean));
+    }
+    res.json({ found: found, scanned: ips.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-
-  res.json({ found, scanned: ips.length });
 });
 
 module.exports = router;
