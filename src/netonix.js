@@ -27,14 +27,57 @@ function agent(sw) {
 }
 
 /**
+ * Tente d'extraire un cookie de session depuis les headers Set-Cookie.
+ */
+function extractCookie(res) {
+  const setCookie = res.headers.get('set-cookie') || '';
+  const match = setCookie.match(/(?:PHPSESSID|session|auth)=([^;]+)/i);
+  return match ? match[0] : null;
+}
+
+/**
  * Authentifie et retourne le cookie de session.
- * Supporte deux formats :
- * - Ancien : POST /api/v1/login avec JSON
- * - Nouveau (1.5.25+) : POST / avec form-urlencoded
+ * Essaie plusieurs méthodes selon le firmware :
+ * 1. POST /index.fcgi  form-urlencoded (firmware 1.5.25+)
+ * 2. POST /api/v1/login JSON           (firmware < 1.5.25)
  */
 async function login(sw) {
-  const body = `username=${encodeURIComponent(sw.username)}&password=${encodeURIComponent(sw.password)}`;
-  const res = await fetch(`${baseUrl(sw)}/index.fcgi`, {
+  // Méthode 1 : form-urlencoded sur /index.fcgi
+  try {
+    const body = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
+    const res = await fetch(baseUrl(sw) + '/index.fcgi', {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body    : body,
+      agent   : agent(sw),
+      timeout : SWITCH_TIMEOUT,
+      redirect: 'manual',
+    });
+    if ([200, 301, 302].includes(res.status)) {
+      const cookie = extractCookie(res);
+      if (cookie) return cookie;
+    }
+  } catch (e) { /* tente méthode 2 */ }
+
+  // Méthode 2 : JSON sur /api/v1/login
+  try {
+    const res = await fetch(baseUrl(sw) + '/api/v1/login', {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify({ username: sw.username, password: sw.password }),
+      agent   : agent(sw),
+      timeout : SWITCH_TIMEOUT,
+      redirect: 'manual',
+    });
+    if ([200, 301, 302].includes(res.status)) {
+      const cookie = extractCookie(res);
+      if (cookie) return cookie;
+    }
+  } catch (e) { /* tente méthode 3 */ }
+
+  // Méthode 3 : form-urlencoded sur /api/v1/login
+  const body = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
+  const res = await fetch(baseUrl(sw) + '/api/v1/login', {
     method  : 'POST',
     headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
     body    : body,
@@ -42,15 +85,12 @@ async function login(sw) {
     timeout : SWITCH_TIMEOUT,
     redirect: 'manual',
   });
-
   if (![200, 301, 302].includes(res.status)) {
-    throw new Error(`Authentification échouée : HTTP ${res.status} — vérifiez les credentials`);
+    throw new Error('Authentification échouée : HTTP ' + res.status + ' — vérifiez les credentials');
   }
-
-  const setCookie = res.headers.get('set-cookie') || '';
-  const match = setCookie.match(/(?:PHPSESSID|session)=([^;]+)/i);
-  if (!match) throw new Error('Aucun cookie de session reçu — vérifiez les credentials');
-  return `${match[0]}`;
+  const cookie = extractCookie(res);
+  if (!cookie) throw new Error('Aucun cookie de session reçu — vérifiez les credentials');
+  return cookie;
 }
 
 /**
