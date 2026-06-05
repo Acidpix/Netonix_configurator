@@ -27,12 +27,14 @@ function agent(sw) {
 }
 
 /**
- * Tente d'extraire un cookie de session depuis les headers Set-Cookie.
+ * Extrait le premier cookie de session depuis les headers Set-Cookie.
+ * Accepte n'importe quel nom de cookie.
  */
 function extractCookie(res) {
-  const setCookie = res.headers.get('set-cookie') || '';
-  const match = setCookie.match(/(?:PHPSESSID|session|auth)=([^;]+)/i);
-  return match ? match[0] : null;
+  var setCookie = res.headers.get('set-cookie') || '';
+  // Prend le premier cookie (avant le premier ;)
+  var match = setCookie.match(/^([^;]+)/);
+  return match ? match[1].trim() : null;
 }
 
 /**
@@ -61,17 +63,26 @@ async function tryLogin(sw, method) {
       });
     }
 
+    console.log('[login/' + method + '] status=' + res.status + ' set-cookie=' + (res.headers.get('set-cookie') || '(none)'));
     if (![200, 201, 301, 302].includes(res.status)) return null;
 
-    // 1. Cookie dans Set-Cookie
+    // 1. Cookie dans Set-Cookie (n'importe quel nom)
     var cookie = extractCookie(res);
     if (cookie) return { Cookie: cookie };
 
-    // 2. Token dans le body JSON  (ex: { token: "...", session: "..." })
+    // 2. Token dans header custom
+    var xToken = res.headers.get('x-auth-token') || res.headers.get('x-session-token') || res.headers.get('authorization');
+    if (xToken) return { Authorization: xToken.startsWith('Bearer ') ? xToken : 'Bearer ' + xToken };
+
+    // 3. Token dans le body JSON
     try {
-      var body = await res.json();
-      var token = body.token || body.session || body.access_token || body.sessionId || null;
-      if (token) return { Authorization: 'Bearer ' + token };
+      var text = await res.text();
+      if (text) {
+        var body = JSON.parse(text);
+        var token = body.token || body.session || body.access_token || body.sessionId
+                 || body.Session || body.Token || body.sid || body.key || null;
+        if (token) return { Authorization: 'Bearer ' + token };
+      }
     } catch (e) {}
 
     return null;
