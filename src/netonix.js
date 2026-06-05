@@ -264,12 +264,18 @@ async function portStats(sw, portNum) {
 function detectModel(config, models) {
   if (!models) models = [];
   if (!config) return null;
-  const hw = config.hardware || config.model || '';
+
+  // Cherche un champ hardware/model (plusieurs conventions de nommage)
+  const hw = config.hardware || config.Hardware || config.model || config.Model
+           || config.Switch_Model || config.hardware_model || config.HW_Version || '';
   if (hw) {
     const match = models.find(m => hw.toUpperCase().includes(m.key.toUpperCase()));
     if (match) return match.key;
   }
-  const portCount = Object.keys(config.ports || {}).length;
+
+  // Fallback : nombre de ports (Netonix retourne config.Ports, pas config.ports)
+  const ports = config.Ports || config.ports || [];
+  const portCount = Array.isArray(ports) ? ports.length : Object.keys(ports).length;
   if (portCount > 0) {
     const byCount = models.filter(m => m.port_count === portCount).sort((a, b) => a.builtin - b.builtin);
     if (byCount.length) return byCount[0].key;

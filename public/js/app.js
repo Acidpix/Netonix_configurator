@@ -911,15 +911,17 @@ async function startScan() {
     } else {
       const skipNote = skipped ? `<span style="color:var(--text3)"> (${skipped} déjà présent${skipped > 1 ? 's' : ''})</span>` : '';
       res.innerHTML = `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${newFound.length} appareil(s) nouveaux sur ${d.scanned} hôtes${skipNote} :</div>` +
-        newFound.map(({ ip, https, hostname, location }) => `
+        newFound.map(({ ip, https, hostname, location, model }) => `
           <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
             <input type="checkbox" class="scan-chk" data-ip="${ip}" data-https="${https}"
+              data-model="${(model || '').replace(/"/g, '&quot;')}"
               data-location="${(location || '').replace(/"/g, '&quot;')}"
               style="width:auto;flex-shrink:0" checked />
             <div style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-family:var(--mono);font-size:12px">${ip}</span>
                 <span style="font-size:10px;color:var(--text3)">${https ? 'HTTPS' : 'HTTP'}</span>
+                ${model ? `<span style="font-size:10px;font-family:var(--mono);background:rgba(59,130,246,.15);color:var(--accent);padding:1px 6px;border-radius:4px">${model}</span>` : ''}
               </div>
               <input class="scan-name" data-ip="${ip}"
                 value="${(hostname || '').replace(/"/g, '&quot;')}"
@@ -950,12 +952,13 @@ async function addScannedSwitches() {
   } catch {}
 
   const entries = checks.map(chk => {
-    const ip       = chk.dataset.ip;
+    const ip        = chk.dataset.ip;
     const nameInput = document.querySelector(`.scan-name[data-ip="${ip}"]`);
     return {
       ip,
       https   : chk.dataset.https === 'true',
       location: chk.dataset.location || '',
+      model   : chk.dataset.model   || '',
       name    : (nameInput && nameInput.value.trim()) || ip,
       username: settings.scan_default_username || 'admin',
       password: settings.scan_default_password || 'netonix',

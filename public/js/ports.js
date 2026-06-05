@@ -20,15 +20,13 @@ function togglePortColorMode() {
   renderPortGrid(getPortCount(sw ? sw.model : null));
 }
 
-function _poeModeStyle(poe) {
-  if (!poe || poe === false || poe === 'Off' || poe === 'false') {
-    return { border: 'var(--border)', bg: 'var(--bg3)' };
-  }
+function _poeModeBackground(poe) {
+  if (!poe || poe === false || poe === 'Off' || poe === 'false') return 'var(--bg3)';
   const up = String(poe).toUpperCase();
-  if (up === '48VH' || up === '48VHV') return { border: 'var(--red)',    bg: 'rgba(239,68,68,.08)' };
-  if (up === '48V')                    return { border: 'var(--accent)',  bg: 'rgba(59,130,246,.08)' };
-  if (up === '24V')                    return { border: 'var(--green)',   bg: 'rgba(34,197,94,.08)' };
-  return { border: 'var(--amber)', bg: 'rgba(245,158,11,.08)' };
+  if (up === '48VH' || up === '48VHV') return 'rgba(239,68,68,.18)';   // rouge
+  if (up === '48V')                    return 'rgba(34,197,94,.18)';    // vert
+  if (up === '24V')                    return 'rgba(245,158,11,.18)';   // jaune
+  return 'var(--bg3)';
 }
 
 // ── Drag-sélection ────────────────────────────────────────────────────────────
@@ -130,15 +128,14 @@ function renderPortGrid(count) {
     cell.id = `port-${i}`;
 
     if (_portColorMode === 'poe') {
-      const pStyle = _poeModeStyle(poeSrc);
-      cell.className = 'port-cell' + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
-      cell.style.borderColor = pStyle.border;
-      cell.style.background  = pStyle.bg;
+      cell.className     = 'port-cell' + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
+      cell.style.background  = _poeModeBackground(poeSrc);
+      cell.style.borderColor = '';  // géré par .link-up
     } else {
       // Mode preset (défaut)
-      cell.className = 'port-cell' + (p ? ' ' + p.cls : '') + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
-      cell.style.borderColor = '';
+      cell.className     = 'port-cell' + (p ? ' ' + p.cls : '') + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
       cell.style.background  = '';
+      cell.style.borderColor = '';  // géré par .link-up
     }
     cell.oncontextmenu = e => { e.preventDefault(); clearPortSelection(); };
     cell.onmouseenter  = e => showPortTooltip(e, i);

@@ -1,10 +1,11 @@
 'use strict';
 
-const express = require('express');
-const net     = require('net');
-const { getConfig } = require('../netonix');
-const { get } = require('../settingsStore');
-const router  = express.Router();
+const express      = require('express');
+const net          = require('net');
+const { getConfig, detectModel } = require('../netonix');
+const { get }      = require('../settingsStore');
+const modelsStore  = require('../modelsStore');
+const router       = express.Router();
 
 function tcpCheck(ip, port, timeout = 600) {
   return new Promise(resolve => {
@@ -45,19 +46,16 @@ async function getDeviceInfo(ip, https) {
   try {
     const username = get('scan_default_username', 'admin');
     const password = get('scan_default_password', 'netonix');
-    const config = await getConfig({
-      ip,
-      https,
-      username,
-      password,
-    });
-    const raw = config.config || {};
+    const result = await getConfig({ ip, https, username, password });
+    const raw    = result.config || {};
+    const model  = detectModel(raw, modelsStore.loadAll());
     return {
       hostname: raw.Switch_Name || raw.hostname || raw.sysname || null,
       location: raw.Switch_Location || raw.location || null,
+      model   : model || null,
     };
   } catch {
-    return { hostname: null, location: null };
+    return { hostname: null, location: null, model: null };
   }
 }
 
@@ -83,7 +81,7 @@ router.post('/', async (req, res) => {
           if (await tcpCheck(ip, 443)) useHttps = true;
           else if (!(await tcpCheck(ip, 80))) return null;
           var info = await getDeviceInfo(ip, useHttps);
-          return { ip: ip, https: useHttps, hostname: info.hostname, location: info.location };
+          return { ip: ip, https: useHttps, hostname: info.hostname, location: info.location, model: info.model };
         } catch (e) {
           return null;
         }
