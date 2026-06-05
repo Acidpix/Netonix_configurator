@@ -36,7 +36,8 @@ function extractCookie(res) {
 }
 
 /**
- * Tente une méthode de login et retourne le cookie, ou null si échec.
+ * Tente une méthode de login.
+ * Retourne { header: 'Cookie: ...' ou 'Authorization: Bearer ...' } ou null.
  */
 async function tryLogin(sw, method) {
   try {
@@ -59,111 +60,121 @@ async function tryLogin(sw, method) {
         body: formBody, agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
       });
     }
-    if ([200, 301, 302].includes(res.status)) return extractCookie(res);
+
+    if (![200, 201, 301, 302].includes(res.status)) return null;
+
+    // 1. Cookie dans Set-Cookie
+    var cookie = extractCookie(res);
+    if (cookie) return { Cookie: cookie };
+
+    // 2. Token dans le body JSON  (ex: { token: "...", session: "..." })
+    try {
+      var body = await res.json();
+      var token = body.token || body.session || body.access_token || body.sessionId || null;
+      if (token) return { Authorization: 'Bearer ' + token };
+    } catch (e) {}
+
     return null;
   } catch (e) { return null; }
 }
 
 /**
- * Authentifie en testant les méthodes dans l'ordre jusqu'à ce qu'une
- * fonctionne réellement sur l'endpoint API (validation par GET /api/v1/config).
+ * Authentifie en testant les méthodes dans l'ordre.
+ * Valide chaque credential obtenu sur /api/v1/config avant de le retourner.
+ * Retourne un objet { headers } prêt à injecter dans les requêtes API.
  */
 async function login(sw) {
-  var methods = ['fcgi', 'api-json', 'api-form'];
-  var lastErr = 'Aucune méthode d\'authentification n\'a fonctionné — vérifiez les credentials';
+  var methods = ['api-json', 'fcgi', 'api-form'];
 
   for (var i = 0; i < methods.length; i++) {
-    var cookie = await tryLogin(sw, methods[i]);
-    if (!cookie) continue;
+    var auth = await tryLogin(sw, methods[i]);
+    if (!auth) continue;
 
-    // Valide le cookie en appelant l'API
+    // Valide sur l'API
     try {
       var res = await fetch(baseUrl(sw) + '/api/v1/config', {
-        headers: { Cookie: cookie }, agent: agent(sw), timeout: SWITCH_TIMEOUT,
+        headers: auth, agent: agent(sw), timeout: SWITCH_TIMEOUT,
       });
-      if (res.status !== 401) return cookie; // 200 ou autre erreur non-auth → cookie valide
+      if (res.status !== 401) return auth;
     } catch (e) {
-      return cookie; // Erreur réseau → on fait confiance au cookie
+      return auth; // erreur réseau → on fait confiance
     }
-    lastErr = 'Cookie obtenu via ' + methods[i] + ' mais refusé par l\'API (401)';
   }
 
-  throw new Error(lastErr);
+  throw new Error('Authentification échouée — vérifiez les credentials du switch');
 }
 
 /**
  * GET JSON depuis le switch.
  */
 async function get(sw, endpoint) {
-  const cookie = await login(sw);
-  const res    = await fetch(`${baseUrl(sw)}${endpoint}`, {
-    headers : { Cookie: cookie },
+  var auth = await login(sw);
+  var res  = await fetch(baseUrl(sw) + endpoint, {
+    headers : auth,
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
   });
-  if (!res.ok) throw new Error(`GET ${endpoint} → HTTP ${res.status}`);
-  return { data: await res.json(), cookie };
+  if (!res.ok) throw new Error('GET ' + endpoint + ' → HTTP ' + res.status);
+  return { data: await res.json(), auth: auth };
 }
 
 /**
- * POST JSON vers le switch, réutilise un cookie existant si fourni.
+ * POST JSON vers le switch, réutilise l'auth existante si fournie.
  */
-async function post(sw, endpoint, body = {}, cookie = null) {
-  if (!cookie) cookie = await login(sw);
-  const res = await fetch(`${baseUrl(sw)}${endpoint}`, {
+async function post(sw, endpoint, body, auth) {
+  if (!body) body = {};
+  if (!auth) auth = await login(sw);
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, auth);
+  var res = await fetch(baseUrl(sw) + endpoint, {
     method  : 'POST',
-    headers : { 'Content-Type': 'application/json', Cookie: cookie },
+    headers : headers,
     body    : JSON.stringify(body),
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
   });
-  if (!res.ok) throw new Error(`POST ${endpoint} → HTTP ${res.status}`);
-  const text = await res.text();
-  try { return JSON.parse(text); } catch { return { raw: text }; }
+  if (!res.ok) throw new Error('POST ' + endpoint + ' → HTTP ' + res.status);
+  var text = await res.text();
+  try { return JSON.parse(text); } catch (e) { return { raw: text }; }
 }
 
 /**
  * Récupère la config complète.
  */
 async function getConfig(sw) {
-  const { data, cookie } = await get(sw, '/api/v1/config');
-  return { config: data, cookie };
+  var result = await get(sw, '/api/v1/config');
+  return { config: result.data, auth: result.auth };
 }
 
 /**
- * Sauvegarde + applique une config (merge avec l'existante pour préserver
- * les champs non gérés par l'interface).
+ * Sauvegarde + applique une config (merge avec l'existante).
  */
 async function pushConfig(sw, patch) {
-  const cookie     = await login(sw);
-  const { config } = await getConfig({ ...sw, _cookie: cookie });
-
-  const merged = { ...config, ...patch };
-
-  await post(sw, '/api/v1/config', merged, cookie);
-  await post(sw, '/api/v1/apply', {}, cookie);
+  var auth     = await login(sw);
+  var result   = await get(sw, '/api/v1/config');
+  var merged   = Object.assign({}, result.data, patch);
+  await post(sw, '/api/v1/config', merged, auth);
+  await post(sw, '/api/v1/apply', {}, auth);
 }
 
 /**
- * Reset propre : reconstruit une config minimale en conservant
- * hostname, ip, netmask, gateway du switch réel.
+ * Reset propre : reconstruit une config minimale.
  */
-async function resetConfig(sw, { vlans, ports } = {}) {
-  const cookie       = await login(sw);
-  const { config }   = await getConfig({ ...sw });
-
-  const newConfig = {
-    hostname : config.hostname,
-    ip       : config.ip,
-    netmask  : config.netmask,
-    gateway  : config.gateway,
-    vlans    : vlans  || config.vlans,
-    ports    : ports  || {},
+async function resetConfig(sw, options) {
+  if (!options) options = {};
+  var auth     = await login(sw);
+  var result   = await get(sw, '/api/v1/config');
+  var config   = result.data;
+  var newConfig = {
+    Switch_Name : config.Switch_Name || config.hostname,
+    IPv4_Address: config.IPv4_Address || config.ip,
+    IPv4_Netmask: config.IPv4_Netmask || config.netmask,
+    IPv4_Gateway: config.IPv4_Gateway || config.gateway,
+    VLANs       : options.vlans || config.VLANs || config.vlans || [],
+    Ports       : config.Ports  || config.ports  || [],
   };
-
-  await post(sw, '/api/v1/config', newConfig, cookie);
-  await post(sw, '/api/v1/apply', {}, cookie);
-  return { hostname: newConfig.hostname, ip: newConfig.ip };
+  await post(sw, '/api/v1/config', newConfig, auth);
+  await post(sw, '/api/v1/apply', {}, auth);
+  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address };
 }
 
 /**
@@ -178,8 +189,8 @@ async function ping(sw) {
  * Stats temps réel d'un port.
  */
 async function portStats(sw, portNum) {
-  const { data } = await get(sw, `/api/v1/portdetail?port=${portNum}`);
-  return data;
+  var result = await get(sw, '/api/v1/portdetail?port=' + portNum);
+  return result.data;
 }
 
 /**
