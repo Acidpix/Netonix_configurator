@@ -65,7 +65,7 @@ async function login(sw) {
     }
   } catch (e) {}
 
-  // Méthode 2 : /api/v1/login JSON
+  // Méthode 2 : /api/v1/login JSON (firmware ancien)
   try {
     var r2 = await fetch(baseUrl(sw) + '/api/v1/login', {
       method : 'POST',
@@ -89,13 +89,11 @@ async function login(sw) {
  */
 async function get(sw, endpoint) {
   var auth = await login(sw);
-  console.log('[get] ' + baseUrl(sw) + endpoint + ' auth=' + JSON.stringify(auth));
   var res  = await fetch(baseUrl(sw) + endpoint, {
     headers : auth,
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
   });
-  console.log('[get] response status=' + res.status);
   if (!res.ok) throw new Error('GET ' + endpoint + ' → HTTP ' + res.status);
   return { data: await res.json(), auth: auth };
 }
@@ -128,12 +126,119 @@ async function getConfig(sw) {
 }
 
 /**
- * Sauvegarde + applique une config (merge avec l'existante).
+ * Convertit notre format PoE vers le format natif Netonix.
+ */
+function toNativePoe(poe) {
+  if (!poe || poe === false || poe === 'false' || poe === 'Off') return 'Off';
+  if (poe === '24v')   return '24V';
+  if (poe === '48v')   return '48V';
+  if (poe === '48vHV') return '48VH';
+  return String(poe);
+}
+
+/**
+ * Sauvegarde + applique une config au format natif Netonix.
+ *
+ * patch.ports = { "1": { pvid, tagged[], poe, stp, enabled, description, ... }, ... }
+ * patch.vlans = [{ id, name }, ...]
+ *
+ * Traduit vers :
+ *   Ports  = tableau natif mis à jour (PoE, STP, Enable, Name)
+ *   VLANs  = tableau natif avec PortSettings reconstruits (U/T/N par port)
  */
 async function pushConfig(sw, patch) {
-  var auth     = await login(sw);
-  var result   = await get(sw, '/api/v1/config');
-  var merged   = Object.assign({}, result.data, patch);
+  var auth   = await login(sw);
+  var result = await get(sw, '/api/v1/config');
+  var config = result.data;
+
+  // Cloner les tableaux natifs
+  var nativePorts = JSON.parse(JSON.stringify(config.Ports || []));
+  var nativeVlans = JSON.parse(JSON.stringify(config.VLANs || []));
+  var portCount   = nativePorts.length;
+
+  // ── 1. Mise à jour des propriétés de ports ────────────────────────────────
+  var patchPorts = patch.ports || {};
+  Object.keys(patchPorts).forEach(function(numStr) {
+    var portNum = parseInt(numStr);
+    var cfg     = patchPorts[numStr];
+    var portObj = null;
+    for (var i = 0; i < nativePorts.length; i++) {
+      if (nativePorts[i].Number === portNum) { portObj = nativePorts[i]; break; }
+    }
+    if (!portObj) return;
+
+    if (cfg.description !== undefined && cfg.description !== null)
+      portObj.Name   = cfg.description;
+    if (cfg.enabled !== undefined)
+      portObj.Enable = cfg.enabled !== false;
+    if (cfg.poe !== undefined)
+      portObj.PoE    = toNativePoe(cfg.poe);
+    if (cfg.stp !== undefined)
+      portObj.STP    = !!cfg.stp;
+  });
+
+  // ── 2. Mise à jour des VLANs — PortSettings ──────────────────────────────
+  // Construire la carte pvid/tagged par port pour les ports modifiés
+  var portVlanMap = {};
+  Object.keys(patchPorts).forEach(function(numStr) {
+    var portNum = parseInt(numStr);
+    var cfg     = patchPorts[numStr];
+    portVlanMap[portNum] = {
+      pvid  : cfg.pvid   || 1,
+      tagged: cfg.tagged || [],
+    };
+  });
+
+  // S'assurer que tous les VLANs utilisés dans les presets existent
+  var patchVlans = patch.vlans || [];
+  patchVlans.forEach(function(pv) {
+    var pvId = parseInt(pv.id || pv.ID);
+    if (!pvId) return;
+    var exists = nativeVlans.some(function(v) { return parseInt(v.ID) === pvId; });
+    if (!exists) {
+      nativeVlans.push({
+        ID          : String(pvId),
+        Name        : pv.name || pv.Name || ('VLAN ' + pvId),
+        Enable      : true,
+        PortSettings: new Array(portCount + 1).join('N'),
+        IPv4_Enable : false, IPv4_Address: '', IPv4_Netmask: '',
+        IPv6_Enable : false, IPv6_Address: '', IGMP_Querier: false,
+      });
+    } else {
+      // Mettre à jour le nom si fourni
+      nativeVlans.forEach(function(v) {
+        if (parseInt(v.ID) === pvId && (pv.name || pv.Name))
+          v.Name = pv.name || pv.Name;
+      });
+    }
+  });
+
+  // Reconstruire PortSettings pour chaque VLAN
+  nativeVlans.forEach(function(vlan) {
+    var vlanId   = parseInt(vlan.ID);
+    var settings = (vlan.PortSettings || '').split('');
+    while (settings.length < portCount) settings.push('N');
+
+    Object.keys(portVlanMap).forEach(function(numStr) {
+      var portNum = parseInt(numStr);
+      var idx     = portNum - 1;
+      if (idx < 0 || idx >= settings.length) return;
+      var vm = portVlanMap[portNum];
+
+      if (vm.pvid === vlanId) {
+        settings[idx] = 'U';
+      } else if (vm.tagged.indexOf(vlanId) !== -1) {
+        settings[idx] = 'T';
+      } else {
+        settings[idx] = 'N';
+      }
+    });
+
+    vlan.PortSettings = settings.join('');
+  });
+
+  // ── 3. Merge et envoi ─────────────────────────────────────────────────────
+  var merged = Object.assign({}, config, { Ports: nativePorts, VLANs: nativeVlans });
   await post(sw, '/api/v1/config', merged, auth);
   await post(sw, '/api/v1/apply', {}, auth);
 }
