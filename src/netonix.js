@@ -36,61 +36,59 @@ function extractCookie(res) {
 }
 
 /**
- * Authentifie et retourne le cookie de session.
- * Essaie plusieurs méthodes selon le firmware :
- * 1. POST /index.fcgi  form-urlencoded (firmware 1.5.25+)
- * 2. POST /api/v1/login JSON           (firmware < 1.5.25)
+ * Tente une méthode de login et retourne le cookie, ou null si échec.
+ */
+async function tryLogin(sw, method) {
+  try {
+    var res;
+    var formBody = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
+    if (method === 'fcgi') {
+      res = await fetch(baseUrl(sw) + '/index.fcgi', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody, agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
+      });
+    } else if (method === 'api-json') {
+      res = await fetch(baseUrl(sw) + '/api/v1/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: sw.username, password: sw.password }),
+        agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
+      });
+    } else {
+      res = await fetch(baseUrl(sw) + '/api/v1/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody, agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
+      });
+    }
+    if ([200, 301, 302].includes(res.status)) return extractCookie(res);
+    return null;
+  } catch (e) { return null; }
+}
+
+/**
+ * Authentifie en testant les méthodes dans l'ordre jusqu'à ce qu'une
+ * fonctionne réellement sur l'endpoint API (validation par GET /api/v1/config).
  */
 async function login(sw) {
-  // Méthode 1 : form-urlencoded sur /index.fcgi
-  try {
-    const body = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
-    const res = await fetch(baseUrl(sw) + '/index.fcgi', {
-      method  : 'POST',
-      headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body    : body,
-      agent   : agent(sw),
-      timeout : SWITCH_TIMEOUT,
-      redirect: 'manual',
-    });
-    if ([200, 301, 302].includes(res.status)) {
-      const cookie = extractCookie(res);
-      if (cookie) return cookie;
-    }
-  } catch (e) { /* tente méthode 2 */ }
+  var methods = ['fcgi', 'api-json', 'api-form'];
+  var lastErr = 'Aucune méthode d\'authentification n\'a fonctionné — vérifiez les credentials';
 
-  // Méthode 2 : JSON sur /api/v1/login
-  try {
-    const res = await fetch(baseUrl(sw) + '/api/v1/login', {
-      method  : 'POST',
-      headers : { 'Content-Type': 'application/json' },
-      body    : JSON.stringify({ username: sw.username, password: sw.password }),
-      agent   : agent(sw),
-      timeout : SWITCH_TIMEOUT,
-      redirect: 'manual',
-    });
-    if ([200, 301, 302].includes(res.status)) {
-      const cookie = extractCookie(res);
-      if (cookie) return cookie;
-    }
-  } catch (e) { /* tente méthode 3 */ }
+  for (var i = 0; i < methods.length; i++) {
+    var cookie = await tryLogin(sw, methods[i]);
+    if (!cookie) continue;
 
-  // Méthode 3 : form-urlencoded sur /api/v1/login
-  const body = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
-  const res = await fetch(baseUrl(sw) + '/api/v1/login', {
-    method  : 'POST',
-    headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body    : body,
-    agent   : agent(sw),
-    timeout : SWITCH_TIMEOUT,
-    redirect: 'manual',
-  });
-  if (![200, 301, 302].includes(res.status)) {
-    throw new Error('Authentification échouée : HTTP ' + res.status + ' — vérifiez les credentials');
+    // Valide le cookie en appelant l'API
+    try {
+      var res = await fetch(baseUrl(sw) + '/api/v1/config', {
+        headers: { Cookie: cookie }, agent: agent(sw), timeout: SWITCH_TIMEOUT,
+      });
+      if (res.status !== 401) return cookie; // 200 ou autre erreur non-auth → cookie valide
+    } catch (e) {
+      return cookie; // Erreur réseau → on fait confiance au cookie
+    }
+    lastErr = 'Cookie obtenu via ' + methods[i] + ' mais refusé par l\'API (401)';
   }
-  const cookie = extractCookie(res);
-  if (!cookie) throw new Error('Aucun cookie de session reçu — vérifiez les credentials');
-  return cookie;
+
+  throw new Error(lastErr);
 }
 
 /**
