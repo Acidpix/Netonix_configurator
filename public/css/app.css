@@ -131,7 +131,7 @@ select option { background: var(--bg3); }
 .port-cell.p-server  { border-color: var(--purple); background: rgba(168,85,247,.08); }
 .port-cell.p-disabled{ border-color: var(--text3);  background: var(--bg); opacity: .5; }
 .port-cell.p-unknown { border-color: var(--text3);  background: rgba(85,96,128,.08); border-style: dashed; }
-.port-color-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.port-cell.link-up  { border-color: var(--green) !important; border-style: solid !important; box-shadow: inset 0 0 0 1px rgba(34,197,94,.25); }
 .port-num   { font-size: 10px; font-weight: 700; font-family: var(--mono); }
 .port-label { font-size: 9px; color: var(--text3); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .port-badges { display: flex; gap: 3px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 1px; }

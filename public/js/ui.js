@@ -37,7 +37,7 @@ function setTopbar(sw, online) {
 }
 
 function enableToolbar(enabled) {
-  ['btn-fetch', 'btn-push', 'btn-reboot', 'btn-factory-reset', 'btn-edit', 'btn-del'].forEach(id => {
+  ['btn-color-mode', 'btn-fetch', 'btn-push', 'btn-reboot', 'btn-factory-reset', 'btn-edit', 'btn-del'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = !enabled;
   });

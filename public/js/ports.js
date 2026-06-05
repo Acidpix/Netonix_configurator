@@ -8,14 +8,27 @@ let portLinkStats    = {};
 let selectedPorts    = new Set();
 
 // ── Couleur des ports ─────────────────────────────────────────────────────────
-let _portColorMode = 'preset'; // 'preset' | 'speed'
+let _portColorMode = 'preset'; // 'preset' | 'poe'
+
+const _COLOR_MODE_LABELS = { preset: 'Mode: Preset', poe: 'Mode: PoE' };
 
 function togglePortColorMode() {
-  _portColorMode = _portColorMode === 'preset' ? 'speed' : 'preset';
+  _portColorMode = _portColorMode === 'preset' ? 'poe' : 'preset';
   const btn = document.getElementById('btn-color-mode');
-  if (btn) btn.textContent = _portColorMode === 'preset' ? 'Couleur: Preset' : 'Couleur: Vitesse';
+  if (btn) btn.textContent = _COLOR_MODE_LABELS[_portColorMode];
   const sw = window.App && window.App.currentSw;
   renderPortGrid(getPortCount(sw ? sw.model : null));
+}
+
+function _poeModeStyle(poe) {
+  if (!poe || poe === false || poe === 'Off' || poe === 'false') {
+    return { border: 'var(--border)', bg: 'var(--bg3)' };
+  }
+  const up = String(poe).toUpperCase();
+  if (up === '48VH' || up === '48VHV') return { border: 'var(--red)',    bg: 'rgba(239,68,68,.08)' };
+  if (up === '48V')                    return { border: 'var(--accent)',  bg: 'rgba(59,130,246,.08)' };
+  if (up === '24V')                    return { border: 'var(--green)',   bg: 'rgba(34,197,94,.08)' };
+  return { border: 'var(--amber)', bg: 'rgba(245,158,11,.08)' };
 }
 
 // ── Drag-sélection ────────────────────────────────────────────────────────────
@@ -99,33 +112,34 @@ function renderPortGrid(count) {
     const raw  = portRawConfigs[i] || null;
     const desc = portDescriptions[i] || '';
 
-    let dotColor, cellLabel, poeSrc;
+    let cellLabel, poeSrc;
     if (p) {
-      dotColor  = p.color;
       cellLabel = desc || p.label;
       poeSrc    = p.poe;
     } else if (raw) {
-      dotColor  = 'var(--border)';
       cellLabel = desc || ('VLAN ' + (raw.pvid !== undefined ? raw.pvid : 1));
       poeSrc    = raw.poe;
     } else {
-      dotColor  = 'var(--border2)';
       cellLabel = desc || 'Libre';
       poeSrc    = null;
     }
 
-    // Mode couleur par vitesse
-    if (_portColorMode === 'speed' && portLinkStats[i]) {
-      const ls = portLinkStats[i];
-      dotColor = !ls.up      ? 'var(--text3)'
-               : ls.speed >= 1000 ? 'var(--green)'
-               : ls.speed >= 100  ? 'var(--amber)'
-               : 'var(--red)';
-    }
+    const isLinkUp = portLinkStats[i] && portLinkStats[i].up;
 
     const cell = document.createElement('div');
-    cell.id        = `port-${i}`;
-    cell.className = 'port-cell' + (p ? ' ' + p.cls : '') + (selectedPorts.has(i) ? ' selected' : '');
+    cell.id = `port-${i}`;
+
+    if (_portColorMode === 'poe') {
+      const pStyle = _poeModeStyle(poeSrc);
+      cell.className = 'port-cell' + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
+      cell.style.borderColor = pStyle.border;
+      cell.style.background  = pStyle.bg;
+    } else {
+      // Mode preset (défaut)
+      cell.className = 'port-cell' + (p ? ' ' + p.cls : '') + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
+      cell.style.borderColor = '';
+      cell.style.background  = '';
+    }
     cell.oncontextmenu = e => { e.preventDefault(); clearPortSelection(); };
     cell.onmouseenter  = e => showPortTooltip(e, i);
     cell.onmouseleave  = () => hidePortTooltip();
@@ -173,7 +187,6 @@ function renderPortGrid(count) {
     };
 
     cell.innerHTML = `
-      <div class="port-color-dot" style="background:${dotColor}"></div>
       <div class="port-num">${i}</div>
       <div class="port-label">${cellLabel}</div>
       <div class="port-badges">${poeBadgeHtml(poeSrc)}${linkBadgeHtml(i)}</div>

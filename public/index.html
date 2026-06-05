@@ -37,6 +37,7 @@
     </div>
     <span class="topbar-badge" id="tb-status"></span>
     <div class="spacer"></div>
+    <button class="btn btn-ghost"   id="btn-color-mode" onclick="togglePortColorMode()" disabled title="Changer le mode couleur des ports">Mode: Preset</button>
     <button class="btn btn-green"   id="btn-fetch"  onclick="fetchConfig()"   disabled>↓ Sync conf</button>
     <button class="btn btn-primary" id="btn-push"   onclick="pushConfig()"    disabled>↑ Push conf</button>
     <button class="btn btn-amber"   id="btn-reboot" onclick="confirmReboot()" disabled>↺ Reset device</button>
@@ -103,10 +104,7 @@
           <!-- Grille de ports -->
           <div>
             <div class="card">
-              <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
-                Ports
-                <button id="btn-color-mode" class="btn btn-ghost" onclick="togglePortColorMode()" style="font-size:10px;padding:2px 8px">Couleur: Preset</button>
-              </div>
+              <div class="card-title">Ports</div>
               <div id="port-grid"></div>
               <div style="margin-top:10px;font-size:11px;color:var(--text3)">
                 Clic gauche : sélectionner · Clic droit : tout désélectionner
