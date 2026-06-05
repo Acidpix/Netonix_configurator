@@ -433,18 +433,64 @@ async function doReboot() {
 // ── CRUD switches ─────────────────────────────────────────────────────────────
 let _editMode = false;
 
-function openAddModal() {
+async function openAddModal() {
   _editMode = false;
-  document.getElementById('modal-title').textContent   = 'Ajouter un switch';
-  document.getElementById('btn-save-sw').textContent   = 'Ajouter';
-  ['f-name','f-ip','f-user','f-pass','f-group','f-location','f-snmp-location'].forEach(id => {
+  document.getElementById('modal-title').textContent = 'Ajouter un switch';
+  document.getElementById('btn-save-sw').textContent = 'Ajouter';
+  ['f-name','f-ip','f-group','f-location','f-snmp-location'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   populateModelSelect();
   document.getElementById('f-model').value   = 'WS-12';
   document.getElementById('f-https').checked = true;
+
+  // Pré-remplir user/pass depuis les paramètres de scan
+  try {
+    const r = await fetch('/api/settings');
+    if (r.ok) {
+      const s = await r.json();
+      document.getElementById('f-user').value = s.scan_default_username || 'admin';
+      document.getElementById('f-pass').value = s.scan_default_password || '';
+    }
+  } catch {}
+
   document.getElementById('modal-sw').classList.add('open');
+}
+
+async function probeSwitchInfo() {
+  const ip       = document.getElementById('f-ip').value.trim();
+  const username = document.getElementById('f-user').value.trim();
+  const password = document.getElementById('f-pass').value;
+  const useHttps = document.getElementById('f-https').checked;
+
+  if (!ip)       return toast('Entrez d\'abord l\'adresse IP', 'err');
+  if (!username) return toast('Entrez d\'abord le nom d\'utilisateur', 'err');
+  if (!password) return toast('Entrez d\'abord le mot de passe', 'err');
+
+  const btn = document.getElementById('btn-probe-sw');
+  setLoading('btn-probe-sw', true, '⟳ Connexion…');
+  try {
+    const r = await fetch('/api/scan/probe', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ ip, username, password, https: useHttps }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+
+    if (d.hostname) document.getElementById('f-name').value = d.hostname;
+    if (d.location) document.getElementById('f-location').value = d.location;
+    if (d.model) {
+      populateModelSelect();
+      document.getElementById('f-model').value = d.model;
+    }
+    toast('Informations récupérées', 'ok');
+  } catch (e) {
+    toast('Erreur : ' + e.message, 'err');
+  } finally {
+    setLoading('btn-probe-sw', false, '⟳ Connexion au switch — récupérer les informations');
+  }
 }
 
 function openEditModal() {
@@ -987,8 +1033,8 @@ async function addScannedSwitches() {
   }
 }
 
-function preFillAdd(ip, https, hostname = '', location = '') {
-  openAddModal();
+async function preFillAdd(ip, https, hostname = '', location = '') {
+  await openAddModal();
   document.getElementById('f-ip').value        = ip;
   document.getElementById('f-https').checked   = https;
   if (hostname) document.getElementById('f-name').value = hostname;

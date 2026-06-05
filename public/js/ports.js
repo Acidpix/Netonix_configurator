@@ -406,10 +406,13 @@ function openTaggedPicker(event, portNum) {
       </label>`).join('')}
   `;
 
-  // Positionnement sous le bouton
-  const rect = event.currentTarget.getBoundingClientRect();
-  const left = Math.min(rect.left, window.innerWidth - 210);
-  const top  = rect.bottom + 6;
+  // Positionnement — sous le bouton par défaut, au-dessus si ça dépasse du bas
+  const rect      = event.currentTarget.getBoundingClientRect();
+  const maxH      = 280;
+  const left      = Math.min(rect.left, window.innerWidth - 210);
+  const topBelow  = rect.bottom + 6;
+  const topAbove  = rect.top - maxH - 6;
+  const top       = topBelow + maxH > window.innerHeight ? Math.max(10, topAbove) : topBelow;
   picker.style.left    = left + 'px';
   picker.style.top     = top  + 'px';
   picker.style.display = 'block';

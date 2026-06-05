@@ -59,6 +59,29 @@ async function getDeviceInfo(ip, https) {
   }
 }
 
+// POST /api/scan/probe  { ip, username, password, https } — récupère les infos d'un seul switch
+router.post('/probe', async (req, res) => {
+  const { ip, username, password, https: useHttps } = req.body;
+  if (!ip) return res.status(400).json({ error: 'ip requis' });
+  try {
+    const result = await getConfig({
+      ip,
+      https   : !!useHttps,
+      username: username || 'admin',
+      password: password || 'netonix',
+    });
+    const raw   = result.config || {};
+    const model = detectModel(raw, modelsStore.loadAll());
+    res.json({
+      hostname: raw.Switch_Name     || raw.hostname || null,
+      location: raw.Switch_Location || raw.location || null,
+      model   : model || null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/scan  { subnet: "192.168.1.0/24" }
 router.post('/', async (req, res) => {
   const { subnet } = req.body;
