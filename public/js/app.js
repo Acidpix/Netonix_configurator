@@ -118,7 +118,7 @@ async function selectSwitch(id) {
 // ── Fetch config depuis le switch ─────────────────────────────────────────────
 async function fetchConfig(silent = false) {
   if (!App.currentId) return;
-  setLoading('btn-fetch', true, '↓ Récupérer config');
+  setLoading('btn-fetch', true, '↓ Sync conf');
   try {
     const r = await fetch(`/api/switches/${App.currentId}/config`);
     if (!r.ok) throw new Error(await r.text());
@@ -201,7 +201,7 @@ async function fetchConfig(silent = false) {
   } catch (e) {
     toast('Erreur fetch : ' + e.message, 'err');
   } finally {
-    setLoading('btn-fetch', false, '↓ Récupérer config');
+    setLoading('btn-fetch', false, '↓ Sync conf');
   }
 }
 
@@ -326,7 +326,7 @@ function confirmReset() {
 }
 
 async function doReset() {
-  setLoading('btn-reset', true, '↺ Reset propre');
+  setLoading('btn-factory-reset', true, '⚠ Factory reset');
   try {
     const r = await fetch(`/api/switches/${App.currentId}/reset`, {
       method : 'POST',
@@ -340,7 +340,28 @@ async function doReset() {
   } catch (e) {
     toast('Erreur reset : ' + e.message, 'err');
   } finally {
-    setLoading('btn-reset', false, '↺ Reset propre');
+    setLoading('btn-factory-reset', false, '⚠ Factory reset');
+  }
+}
+
+function confirmReboot() {
+  if (!App.currentId) return;
+  const sw = App.currentSw;
+  if (!confirm(`Redémarrer "${sw.name}" ?\n\nLe switch sera inaccessible pendant quelques secondes.`)) return;
+  doReboot();
+}
+
+async function doReboot() {
+  setLoading('btn-reboot', true, '↺ Reset device');
+  try {
+    const r = await fetch(`/api/switches/${App.currentId}/reboot`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    toast(d.message || 'Redémarrage lancé', 'ok');
+  } catch (e) {
+    toast('Erreur reboot : ' + e.message, 'err');
+  } finally {
+    setLoading('btn-reboot', false, '↺ Reset device');
   }
 }
 

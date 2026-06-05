@@ -36,9 +36,9 @@
     </div>
     <span class="topbar-badge" id="tb-status"></span>
     <div class="spacer"></div>
-    <button class="btn btn-ghost"   id="btn-fetch" onclick="fetchConfig()"   disabled>↓ Sync conf</button>
-    <button class="btn btn-amber"   id="btn-reset" onclick="confirmReset()"  disabled>↺ Reset device</button>
-    <button class="btn btn-primary" id="btn-push"  onclick="pushConfig()"    disabled>↑ Push conf</button>
+    <button class="btn btn-green"   id="btn-fetch"  onclick="fetchConfig()"   disabled>↓ Sync conf</button>
+    <button class="btn btn-primary" id="btn-push"   onclick="pushConfig()"    disabled>↑ Push conf</button>
+    <button class="btn btn-amber"   id="btn-reboot" onclick="confirmReboot()" disabled>↺ Reset device</button>
     <button class="btn btn-ghost"   id="btn-edit"  onclick="openEditModal()" disabled style="padding:6px 8px" title="Modifier">&#9881;</button>
     <button class="btn btn-danger"  id="btn-del"   onclick="deleteSwitch()"  disabled style="padding:6px 8px" title="Supprimer">✕</button>
   </div>
@@ -169,7 +169,10 @@
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="card-title" style="margin:0">Configuration JSON brute</div>
-          <button class="btn btn-ghost" onclick="copyRaw()" style="font-size:11px">Copier</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost" onclick="copyRaw()" style="font-size:11px">Copier</button>
+            <button class="btn btn-danger" id="btn-factory-reset" onclick="confirmReset()" disabled style="font-size:11px">⚠ Factory reset</button>
+          </div>
         </div>
         <pre id="raw-config">Récupérez d'abord la configuration du switch.</pre>
       </div>

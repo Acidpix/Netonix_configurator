@@ -12,8 +12,9 @@
  *   GET  /api/v1/syslog                               → logs système
  */
 
-const fetch  = require('node-fetch');
-const https  = require('https');
+const fetch      = require('node-fetch');
+const https      = require('https');
+const { execFile } = require('child_process');
 const { SWITCH_TIMEOUT, IGNORE_SSL } = require('./config');
 
 const sslAgent = new https.Agent({ rejectUnauthorized: !IGNORE_SSL });
@@ -89,11 +90,20 @@ async function login(sw) {
  */
 async function get(sw, endpoint, auth) {
   if (!auth) auth = await login(sw);
-  var res  = await fetch(baseUrl(sw) + endpoint, {
+  var res = await fetch(baseUrl(sw) + endpoint, {
     headers : auth,
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
   });
+  // Session invalidée par une opération concurrente (ping, pushConfig…) — réessai avec nouvelle auth
+  if (res.status === 401) {
+    auth = await login(sw);
+    res = await fetch(baseUrl(sw) + endpoint, {
+      headers : auth,
+      agent   : agent(sw),
+      timeout : SWITCH_TIMEOUT,
+    });
+  }
   if (!res.ok) throw new Error('GET ' + endpoint + ' → HTTP ' + res.status);
   return { data: await res.json(), auth: auth };
 }
@@ -104,14 +114,20 @@ async function get(sw, endpoint, auth) {
 async function post(sw, endpoint, body, auth) {
   if (!body) body = {};
   if (!auth) auth = await login(sw);
-  var headers = Object.assign({ 'Content-Type': 'application/json' }, auth);
-  var res = await fetch(baseUrl(sw) + endpoint, {
-    method  : 'POST',
-    headers : headers,
-    body    : JSON.stringify(body),
-    agent   : agent(sw),
-    timeout : SWITCH_TIMEOUT,
-  });
+  var makeReq = function(a) {
+    return fetch(baseUrl(sw) + endpoint, {
+      method  : 'POST',
+      headers : Object.assign({ 'Content-Type': 'application/json' }, a),
+      body    : JSON.stringify(body),
+      agent   : agent(sw),
+      timeout : SWITCH_TIMEOUT,
+    });
+  };
+  var res = await makeReq(auth);
+  if (res.status === 401) {
+    auth = await login(sw);
+    res = await makeReq(auth);
+  }
   if (!res.ok) throw new Error('POST ' + endpoint + ' → HTTP ' + res.status);
   var text = await res.text();
   try { return JSON.parse(text); } catch (e) { return { raw: text }; }
@@ -269,10 +285,26 @@ async function resetConfig(sw, options) {
 }
 
 /**
- * Test de connectivité (login uniquement).
+ * Test de connectivité via ping ICMP — sans consommer de session HTTP.
  */
-async function ping(sw) {
-  await login(sw);
+function ping(sw) {
+  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(sw.ip)) return Promise.reject(new Error('IP invalide'));
+  var isWin = process.platform === 'win32';
+  var args  = isWin ? ['-n', '1', '-w', '1000', sw.ip] : ['-c', '1', '-W', '1', sw.ip];
+  return new Promise(function(resolve, reject) {
+    execFile('ping', args, function(err) {
+      if (err) reject(new Error('Hôte injoignable : ' + sw.ip));
+      else resolve(true);
+    });
+  });
+}
+
+/**
+ * Redémarre le switch.
+ */
+async function reboot(sw) {
+  var auth = await login(sw);
+  await post(sw, '/api/v1/reboot', {}, auth);
   return true;
 }
 
@@ -313,4 +345,4 @@ function detectModel(config, models = []) {
   return null;
 }
 
-module.exports = { login, get, post, getConfig, pushConfig, resetConfig, ping, portStats, detectModel };
+module.exports = { login, get, post, getConfig, pushConfig, resetConfig, ping, reboot, portStats, detectModel };

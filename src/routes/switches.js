@@ -131,6 +131,18 @@ router.post('/:id/reset', async (req, res) => {
   }
 });
 
+// POST /api/switches/:id/reboot — redémarre le switch
+router.post('/:id/reboot', async (req, res) => {
+  const sw = store.findById(req.params.id);
+  if (!sw) return res.status(404).json({ error: 'Switch introuvable' });
+  try {
+    await nx.reboot(sw);
+    res.json({ ok: true, message: `Redémarrage de "${sw.name}" lancé` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/switches/:id/stats/:port — stats temps réel d'un port
 router.get('/:id/stats/:port', async (req, res) => {
   const sw = store.findById(req.params.id);
