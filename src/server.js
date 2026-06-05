@@ -35,6 +35,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// Middleware d'erreur global — garantit toujours du JSON, jamais de HTML
+app.use(function(err, req, res, next) {
+  console.error('[error]', req.method, req.path, err.message);
+  res.status(500).json({ error: err.message || 'Erreur interne du serveur' });
+});
+
 app.listen(PORT, () => {
   console.log(`\n  Netonix Manager  ->  http://localhost:${PORT}\n`);
 });

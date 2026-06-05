@@ -353,8 +353,10 @@ async function saveSwitch() {
   try {
     const url    = _editMode ? `/api/switches/${App.currentId}` : '/api/switches';
     const method = _editMode ? 'PUT' : 'POST';
-    const r  = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const sw = await r.json();
+    const r    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const text = await r.text();
+    let sw;
+    try { sw = JSON.parse(text); } catch (_) { throw new Error('Réponse invalide du serveur : ' + text.slice(0, 200)); }
     if (!r.ok) throw new Error(sw.error);
     closeModal();
     await loadSwitches();
