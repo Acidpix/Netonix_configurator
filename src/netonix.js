@@ -256,7 +256,9 @@ async function reboot(sw) {
 
 async function portStats(sw, portNum) {
   var result = await get(sw, '/api/v1/portdetail?port=' + portNum);
-  return result.data;
+  var data = result.data;
+  // Le switch retourne { PortDetail: {...} } — on unwrappe
+  return (data && typeof data === 'object' && data.PortDetail) ? data.PortDetail : data;
 }
 
 function detectModel(config, models) {

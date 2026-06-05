@@ -50,8 +50,7 @@ function poeBadgeHtml(poe) {
 
 function linkBadgeHtml(portNum) {
   const s = portLinkStats[portNum];
-  if (!s) return '';
-  if (!s.up)         return `<span class="port-badge badge-link-down" title="Lien inactif">↓</span>`;
+  if (!s || !s.up) return '';
   if (s.speed >= 1000) return `<span class="port-badge badge-link-1g"   title="1 Gb/s">1G</span>`;
   if (s.speed >= 100)  return `<span class="port-badge badge-link-100m" title="100 Mb/s">100M</span>`;
   if (s.speed >= 10)   return `<span class="port-badge badge-link-10m"  title="10 Mb/s">10M</span>`;

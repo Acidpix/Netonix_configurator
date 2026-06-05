@@ -204,6 +204,17 @@ async function fetchConfig(silent = false) {
         portStates[portNum]       = raw.enabled === false ? 'disabled' : (detected === null ? 'unknown' : detected);
         portDescriptions[portNum] = raw.description;
         portRawConfigs[portNum]   = raw;
+
+        // Si la config inclut un statut de lien (certaines versions firmware)
+        var cfgLink  = portObj.Link  || portObj.link  || portObj.Status || portObj.link_status || '';
+        var cfgSpeed = portObj.Speed || portObj.speed || portObj.Link_Speed || '';
+        if (cfgLink || cfgSpeed) {
+          var ls = String(cfgLink).toLowerCase();
+          var lu = ls === 'up' || ls === 'connected' || ls === 'active' || String(cfgSpeed) !== '';
+          var ss = String(cfgSpeed).toLowerCase();
+          var sp = ss.includes('1000') || ss === '1g' ? 1000 : ss.includes('100') ? 100 : ss.includes('10') ? 10 : parseInt(ss) || 0;
+          portLinkStats[portNum] = { up: lu, speed: sp };
+        }
       });
     }
 
@@ -301,9 +312,10 @@ async function saveSwInfo() {
 
 // ── Stats de lien par port ────────────────────────────────────────────────
 async function loadPortLinkStats(switchId, portCount) {
-  const BATCH   = 4;
-  const sw      = App.currentSw;
-  let _firstLog = true;
+  // L'API portdetail ne retourne que des compteurs de trafic (pas le statut du lien).
+  // On utilise les compteurs comme indicateur d'activité : si > 0, le port a eu du trafic.
+  const BATCH = 4;
+  const sw    = App.currentSw;
   for (let i = 1; i <= portCount; i += BATCH) {
     if (App.currentId !== switchId) return;
     const batch = [];
@@ -311,34 +323,34 @@ async function loadPortLinkStats(switchId, portCount) {
     await Promise.all(batch.map(async portNum => {
       try {
         const r = await fetch(`/api/switches/${switchId}/stats/${portNum}`);
-        if (!r.ok) { console.warn('[portStats] port', portNum, '→ HTTP', r.status); return; }
-        const raw = await r.json();
+        if (!r.ok) return;
+        const d = await r.json(); // déjà unwrappé de PortDetail côté backend
 
-        // Le switch peut retourner un tableau de tous les ports ou un objet unique
-        let d = Array.isArray(raw)
-          ? (raw.find(p => (p.Number ?? p.number ?? p.Port ?? p.port) == portNum) || raw[portNum - 1] || {})
-          : raw;
+        // Si la réponse contient quand même des champs de lien explicites
+        const linkStr = String(d.Link ?? d.link ?? d.Status ?? d.status ?? '').toLowerCase();
+        if (linkStr === 'up' || linkStr === 'connected' || linkStr === 'active') {
+          const sr = String(d.Speed ?? d.speed ?? '').toLowerCase();
+          const speed = sr.includes('1000') || sr === '1g' ? 1000
+                      : sr.includes('100')  ? 100
+                      : sr.includes('10')   ? 10
+                      : parseInt(sr) || 0;
+          portLinkStats[portNum] = { up: true, speed };
+          return;
+        }
+        if (linkStr === 'down' || linkStr === 'disconnected') {
+          portLinkStats[portNum] = { up: false, speed: 0 };
+          return;
+        }
 
-        // Log de debug : affiche la structure du premier port dans la console navigateur
-        if (_firstLog) { console.log('[portdetail raw]', JSON.stringify(d)); _firstLog = false; }
-
-        const speedRaw = d.Speed ?? d.speed ?? d.Link_Speed ?? d.link_speed ??
-                         d.Rx_Speed ?? d.Bandwidth ?? d.bandwidth ?? d.Rate ?? '';
-
-        const linkStr = String(d.Link ?? d.link ?? d.Status ?? d.status ?? d.Link_Status ?? '').toLowerCase();
-        const linkUp  = linkStr === 'up' || linkStr === 'connected' || linkStr === 'active'
-                     || d.Connected === true || d.connected === true
-                     || d.Link_Up === true || d.link_up === true
-                     || (String(speedRaw).trim() !== '' && Number(speedRaw) > 0);
-
-        const sr = String(speedRaw).toLowerCase();
-        let speed = 0;
-        if (sr.includes('1000') || sr === '1g' || sr === '1gbps' || sr === '1000mbps') speed = 1000;
-        else if (sr.includes('100') && !sr.includes('1000'))                            speed = 100;
-        else if (sr.includes('10') && !sr.includes('100'))                              speed = 10;
-        else speed = parseInt(sr.replace(/[^\d]/g, '')) || 0;
-
-        portLinkStats[portNum] = { up: linkUp, speed };
+        // Pas de champ lien explicite : inférer depuis les compteurs de trafic
+        const rxBytes  = (d.ifInOctets  || 0) + (d.rx_etherStatsOctets  || 0);
+        const txBytes  = (d.ifOutOctets || 0) + (d.tx_etherStatsOctets || 0);
+        const rxPkts   = (d.ifInUcastPkts  || 0) + (d.rx_etherStatsPkts  || 0);
+        const txPkts   = (d.ifOutUcastPkts || 0) + (d.tx_etherStatsPkts || 0);
+        if (rxBytes + txBytes + rxPkts + txPkts > 0) {
+          portLinkStats[portNum] = { up: true, speed: 0 };
+        }
+        // Sinon : pas de mise à jour (badge absent = statut inconnu)
       } catch (e) {
         console.warn('[portStats] port', portNum, e.message);
       }
