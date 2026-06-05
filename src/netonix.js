@@ -27,55 +27,57 @@ function agent(sw) {
 }
 
 /**
- * Extrait tous les cookies depuis Set-Cookie sous forme "name=val; name2=val2".
+ * Extrait le cookie de session depuis Set-Cookie.
+ * Cherche PHPSESSID, session, ou tout autre cookie contenant "sess"/"auth"/"token".
+ * En dernier recours, prend le premier cookie disponible.
  */
-function extractAllCookies(setCookieHeader) {
+function extractSessionCookie(setCookieHeader) {
   if (!setCookieHeader) return null;
-  // Sépare les cookies sur ", " suivi d'un nom de cookie (mot=)
-  var parts = setCookieHeader.split(/,\s*(?=[A-Za-z_][A-Za-z0-9_-]*=)/);
-  var cookies = parts.map(function(p) {
-    var m = p.match(/^\s*([^;]+)/);
-    return m ? m[1].trim() : null;
-  }).filter(Boolean);
-  return cookies.length ? cookies.join('; ') : null;
+  // Priorité : PHPSESSID ou session (original)
+  var m = setCookieHeader.match(/(?:PHPSESSID|session)=([^;,\s]+)/i);
+  if (m) return m[0];
+  // Fallback : premier cookie
+  var first = setCookieHeader.match(/^([A-Za-z_][A-Za-z0-9_-]*=[^;,\s]+)/);
+  return first ? first[1] : null;
 }
 
 /**
- * Authentifie et retourne un objet auth { Cookie: "..." } à injecter dans les requêtes.
- * Essaie /index.fcgi (firmware récent) puis /api/v1/login (firmware ancien).
+ * Authentifie et retourne un objet { Cookie: "..." }.
+ * Méthode 1 : /index.fcgi (firmware récent 1.5.25+)
+ * Méthode 2 : /api/v1/login JSON (firmware ancien)
  */
 async function login(sw) {
   var formBody = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
 
-  // Méthode 1 : /index.fcgi form-urlencoded (firmware 1.5.25+)
+  // Méthode 1 : /index.fcgi
   try {
-    var res = await fetch(baseUrl(sw) + '/index.fcgi', {
-      method: 'POST',
+    var r1 = await fetch(baseUrl(sw) + '/index.fcgi', {
+      method : 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formBody,
-      agent: agent(sw),
+      body   : formBody,
+      agent  : agent(sw),
       timeout: SWITCH_TIMEOUT,
       redirect: 'manual',
     });
-    if ([200, 301, 302].includes(res.status)) {
-      var cookie = extractAllCookies(res.headers.get('set-cookie'));
-      if (cookie) return { Cookie: cookie };
+    if ([200, 301, 302].includes(r1.status)) {
+      var c1 = extractSessionCookie(r1.headers.get('set-cookie'));
+      if (c1) return { Cookie: c1 };
     }
   } catch (e) {}
 
-  // Méthode 2 : /api/v1/login JSON (firmware < 1.5.25)
+  // Méthode 2 : /api/v1/login JSON
   try {
-    var res2 = await fetch(baseUrl(sw) + '/api/v1/login', {
-      method: 'POST',
+    var r2 = await fetch(baseUrl(sw) + '/api/v1/login', {
+      method : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: sw.username, password: sw.password }),
-      agent: agent(sw),
+      body   : JSON.stringify({ username: sw.username, password: sw.password }),
+      agent  : agent(sw),
       timeout: SWITCH_TIMEOUT,
       redirect: 'manual',
     });
-    if ([200, 201, 301, 302].includes(res2.status)) {
-      var cookie2 = extractAllCookies(res2.headers.get('set-cookie'));
-      if (cookie2) return { Cookie: cookie2 };
+    if ([200, 201, 301, 302].includes(r2.status)) {
+      var c2 = extractSessionCookie(r2.headers.get('set-cookie'));
+      if (c2) return { Cookie: c2 };
     }
   } catch (e) {}
 
@@ -87,11 +89,13 @@ async function login(sw) {
  */
 async function get(sw, endpoint) {
   var auth = await login(sw);
+  console.log('[get] ' + baseUrl(sw) + endpoint + ' auth=' + JSON.stringify(auth));
   var res  = await fetch(baseUrl(sw) + endpoint, {
     headers : auth,
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
   });
+  console.log('[get] response status=' + res.status);
   if (!res.ok) throw new Error('GET ' + endpoint + ' → HTTP ' + res.status);
   return { data: await res.json(), auth: auth };
 }
