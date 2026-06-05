@@ -27,90 +27,57 @@ function agent(sw) {
 }
 
 /**
- * Extrait le premier cookie de session depuis les headers Set-Cookie.
- * Accepte n'importe quel nom de cookie.
+ * Extrait tous les cookies depuis Set-Cookie sous forme "name=val; name2=val2".
  */
-function extractCookie(res) {
-  var setCookie = res.headers.get('set-cookie') || '';
-  // Prend le premier cookie (avant le premier ;)
-  var match = setCookie.match(/^([^;]+)/);
-  return match ? match[1].trim() : null;
+function extractAllCookies(setCookieHeader) {
+  if (!setCookieHeader) return null;
+  // Sépare les cookies sur ", " suivi d'un nom de cookie (mot=)
+  var parts = setCookieHeader.split(/,\s*(?=[A-Za-z_][A-Za-z0-9_-]*=)/);
+  var cookies = parts.map(function(p) {
+    var m = p.match(/^\s*([^;]+)/);
+    return m ? m[1].trim() : null;
+  }).filter(Boolean);
+  return cookies.length ? cookies.join('; ') : null;
 }
 
 /**
- * Tente une méthode de login.
- * Retourne { header: 'Cookie: ...' ou 'Authorization: Bearer ...' } ou null.
- */
-async function tryLogin(sw, method) {
-  try {
-    var res;
-    var formBody = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
-    if (method === 'fcgi') {
-      res = await fetch(baseUrl(sw) + '/index.fcgi', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formBody, agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
-      });
-    } else if (method === 'api-json') {
-      res = await fetch(baseUrl(sw) + '/api/v1/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: sw.username, password: sw.password }),
-        agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
-      });
-    } else {
-      res = await fetch(baseUrl(sw) + '/api/v1/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formBody, agent: agent(sw), timeout: SWITCH_TIMEOUT, redirect: 'manual',
-      });
-    }
-
-    console.log('[login/' + method + '] status=' + res.status + ' set-cookie=' + (res.headers.get('set-cookie') || '(none)'));
-    if (![200, 201, 301, 302].includes(res.status)) return null;
-
-    // 1. Cookie dans Set-Cookie (n'importe quel nom)
-    var cookie = extractCookie(res);
-    if (cookie) return { Cookie: cookie };
-
-    // 2. Token dans header custom
-    var xToken = res.headers.get('x-auth-token') || res.headers.get('x-session-token') || res.headers.get('authorization');
-    if (xToken) return { Authorization: xToken.startsWith('Bearer ') ? xToken : 'Bearer ' + xToken };
-
-    // 3. Token dans le body JSON
-    try {
-      var text = await res.text();
-      if (text) {
-        var body = JSON.parse(text);
-        var token = body.token || body.session || body.access_token || body.sessionId
-                 || body.Session || body.Token || body.sid || body.key || null;
-        if (token) return { Authorization: 'Bearer ' + token };
-      }
-    } catch (e) {}
-
-    return null;
-  } catch (e) { return null; }
-}
-
-/**
- * Authentifie en testant les méthodes dans l'ordre.
- * Valide chaque credential obtenu sur /api/v1/config avant de le retourner.
- * Retourne un objet { headers } prêt à injecter dans les requêtes API.
+ * Authentifie et retourne un objet auth { Cookie: "..." } à injecter dans les requêtes.
+ * Essaie /index.fcgi (firmware récent) puis /api/v1/login (firmware ancien).
  */
 async function login(sw) {
-  var methods = ['api-json', 'fcgi', 'api-form'];
+  var formBody = 'username=' + encodeURIComponent(sw.username) + '&password=' + encodeURIComponent(sw.password);
 
-  for (var i = 0; i < methods.length; i++) {
-    var auth = await tryLogin(sw, methods[i]);
-    if (!auth) continue;
-
-    // Valide sur l'API
-    try {
-      var res = await fetch(baseUrl(sw) + '/api/v1/config', {
-        headers: auth, agent: agent(sw), timeout: SWITCH_TIMEOUT,
-      });
-      if (res.status !== 401) return auth;
-    } catch (e) {
-      return auth; // erreur réseau → on fait confiance
+  // Méthode 1 : /index.fcgi form-urlencoded (firmware 1.5.25+)
+  try {
+    var res = await fetch(baseUrl(sw) + '/index.fcgi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody,
+      agent: agent(sw),
+      timeout: SWITCH_TIMEOUT,
+      redirect: 'manual',
+    });
+    if ([200, 301, 302].includes(res.status)) {
+      var cookie = extractAllCookies(res.headers.get('set-cookie'));
+      if (cookie) return { Cookie: cookie };
     }
-  }
+  } catch (e) {}
+
+  // Méthode 2 : /api/v1/login JSON (firmware < 1.5.25)
+  try {
+    var res2 = await fetch(baseUrl(sw) + '/api/v1/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: sw.username, password: sw.password }),
+      agent: agent(sw),
+      timeout: SWITCH_TIMEOUT,
+      redirect: 'manual',
+    });
+    if ([200, 201, 301, 302].includes(res2.status)) {
+      var cookie2 = extractAllCookies(res2.headers.get('set-cookie'));
+      if (cookie2) return { Cookie: cookie2 };
+    }
+  } catch (e) {}
 
   throw new Error('Authentification échouée — vérifiez les credentials du switch');
 }
