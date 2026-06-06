@@ -166,7 +166,11 @@ function _renderPortTable(count) {
       <td style="font-family:var(--mono);font-weight:700;font-size:13px">${i}</td>
       <td>${presetHtml}</td>
       <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${pvid}</td>
-      <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${tagged.length ? tagged.join(', ') : '<span style="color:var(--text3)">—</span>'}</td>
+      <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${
+        tagged.length === 0 ? '<span style="color:var(--text3)">—</span>'
+        : tagged.length <= 3 ? tagged.join(', ')
+        : tagged.slice(0, 3).join(', ') + ' <span style="color:var(--text3)">+' + (tagged.length - 3) + '</span>'
+      }</td>
       <td>${poeHtml}</td>
       <td style="font-size:11px">${linkHtml}</td>
     `;
