@@ -38,7 +38,22 @@ html.light #raw-config { background: #f6f8fa; color: #24292f; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
-body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 13px; display: flex; height: 100vh; overflow: hidden; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 13px; display: flex; height: 100vh; overflow: hidden; position: relative; }
+
+/* ── Filigrane Solidays ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('https://www.solidays.org/wp-content/uploads/2023/11/s24_logo2l_sansdate.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: clamp(300px, 60vmin, 900px);
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+}
+#sidebar, #main { position: relative; z-index: 1; }
 
 /* ── Sidebar ── */
 #sidebar { width: 220px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
