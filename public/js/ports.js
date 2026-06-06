@@ -9,6 +9,7 @@ let selectedPorts    = new Set();
 
 // ── Couleur des ports ─────────────────────────────────────────────────────────
 let _portColorMode = 'preset'; // 'preset' | 'poe'
+let _portViewMode  = 'grid';   // 'grid'   | 'table'
 
 const _COLOR_MODE_LABELS = { preset: 'Mode: Preset', poe: 'Mode: PoE' };
 
@@ -16,6 +17,16 @@ function togglePortColorMode() {
   _portColorMode = _portColorMode === 'preset' ? 'poe' : 'preset';
   const btn = document.getElementById('btn-color-mode');
   if (btn) btn.textContent = _COLOR_MODE_LABELS[_portColorMode];
+  const sw = window.App && window.App.currentSw;
+  renderPortGrid(getPortCount(sw ? sw.model : null));
+}
+
+function togglePortViewMode() {
+  _portViewMode = _portViewMode === 'grid' ? 'table' : 'grid';
+  const btn = document.getElementById('btn-view-mode');
+  if (btn) btn.textContent = _portViewMode === 'grid' ? '☰ Tableau' : '⊞ Grille';
+  const hint = document.getElementById('port-grid-hint');
+  if (hint) hint.style.display = _portViewMode === 'table' ? 'none' : '';
   const sw = window.App && window.App.currentSw;
   renderPortGrid(getPortCount(sw ? sw.model : null));
 }
@@ -96,11 +107,90 @@ function getPortCount(model) {
   return MODEL_PORTS[model] || 12;
 }
 
+// ── Rendu tableau ──────────────────────────────────────────────────────────────
+
+function _renderPortTable(count) {
+  const grid = document.getElementById('port-grid');
+  grid.style.gridTemplateColumns = '';
+  grid.innerHTML = '';
+
+  const table = document.createElement('table');
+  table.className = 'port-table';
+  table.innerHTML = `<thead><tr>
+    <th style="width:54px">#</th>
+    <th>Preset / Config</th>
+    <th style="width:100px">VLAN natif</th>
+    <th style="width:140px">VLANs taggés</th>
+    <th style="width:68px">PoE</th>
+    <th style="width:90px">Lien</th>
+  </tr></thead>`;
+
+  const tbody = document.createElement('tbody');
+  for (let i = 1; i <= count; i++) {
+    const key  = portStates[i];
+    const p    = key && key !== 'unknown' ? PRESETS[key] : null;
+    const raw  = portRawConfigs[i] || null;
+    const desc = portDescriptions[i] || '';
+    const cfg  = p || raw || {};
+    const pvid   = p ? p.pvid   : (raw && raw.pvid  !== undefined ? raw.pvid  : 1);
+    const tagged = p ? (p.tagged || []) : (Array.isArray(raw && raw.tagged) ? raw.tagged : []);
+    const poe    = p ? p.poe    : (raw ? raw.poe : false);
+    const ls     = portLinkStats[i];
+
+    let presetHtml;
+    if (p) {
+      presetHtml = `<span class="preset-dot" style="background:${p.color}"></span> <span style="font-weight:500">${desc || p.label}</span>`;
+    } else if (raw) {
+      presetHtml = `<span class="preset-dot" style="background:var(--border2)"></span> <span style="color:var(--text2)">${desc || 'VLAN&nbsp;' + (raw.pvid || 1)}</span>`;
+    } else {
+      presetHtml = `<span style="color:var(--text3)">— Libre</span>`;
+    }
+
+    let linkHtml;
+    if (!ls)               linkHtml = `<span style="color:var(--text3)">—</span>`;
+    else if (!ls.up)       linkHtml = `<span style="color:var(--text3)">↓ Déco.</span>`;
+    else if (ls.speed >= 1000) linkHtml = `<span style="color:var(--green)">↑ 1 Gb/s</span>`;
+    else if (ls.speed >= 100)  linkHtml = `<span style="color:var(--amber)">↑ 100 Mb/s</span>`;
+    else if (ls.speed >= 10)   linkHtml = `<span style="color:var(--red)">↑ 10 Mb/s</span>`;
+    else                       linkHtml = `<span style="color:var(--green)">↑ Actif</span>`;
+
+    const poeNorm = poe && poe !== false && poe !== 'false' && poe !== 'Off';
+    const poeHtml = poeNorm
+      ? `<span style="color:var(--green);font-family:var(--mono);font-size:11px">${String(poe).toUpperCase()}</span>`
+      : `<span style="color:var(--text3)">—</span>`;
+
+    const tr = document.createElement('tr');
+    const cls = key && key !== 'unknown' && PRESETS[key] ? ' p-' + key : (key === 'unknown' ? ' p-unknown' : '');
+    tr.className = 'port-row' + cls + (selectedPorts.has(i) ? ' selected' : '');
+    tr.innerHTML = `
+      <td style="font-family:var(--mono);font-weight:700;font-size:13px">${i}</td>
+      <td>${presetHtml}</td>
+      <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${pvid}</td>
+      <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${tagged.length ? tagged.join(', ') : '<span style="color:var(--text3)">—</span>'}</td>
+      <td>${poeHtml}</td>
+      <td style="font-size:11px">${linkHtml}</td>
+    `;
+
+    const portNum = i;
+    tr.onmousedown    = function(e) { e.preventDefault(); _dragSelecting = true; _dragStart = portNum; _dragMoved = false; };
+    tr.oncontextmenu  = function(e) { e.preventDefault(); clearPortSelection(); };
+    tr.onmouseenter   = function(e) { showPortTooltip(e, portNum); };
+    tr.onmouseleave   = function()  { hidePortTooltip(); };
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  grid.appendChild(table);
+  renderPortLegend();
+}
+
 // ── Rendu grille ──────────────────────────────────────────────────────────────
 
 function renderPortGrid(count) {
+  if (_portViewMode === 'table') return _renderPortTable(count);
+
   const grid = document.getElementById('port-grid');
-  const cols  = count <= 8 ? 4 : count <= 12 ? 6 : 8;
+  const cols  = count <= 6 ? 6 : count <= 8 ? 4 : count <= 12 ? 6 : count <= 16 ? 8 : 9;
   grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   grid.innerHTML = '';
 
@@ -234,9 +324,10 @@ function showPortTooltip(e, i) {
   if (desc) html += `<div class="tt-desc">${desc}</div>`;
 
   tt.innerHTML = html;
-  const rect = e.currentTarget.getBoundingClientRect();
-  tt.style.left    = (rect.right + 8) + 'px';
-  tt.style.top     = Math.min(rect.top, window.innerHeight - 180) + 'px';
+  const x = Math.min(e.clientX + 14, window.innerWidth - 240);
+  const y = Math.max(10, Math.min(e.clientY - 20, window.innerHeight - 200));
+  tt.style.left    = x + 'px';
+  tt.style.top     = y + 'px';
   tt.style.display = 'block';
 }
 
@@ -250,7 +341,7 @@ function togglePort(i) {
   if (selectedPorts.has(i)) selectedPorts.delete(i);
   else selectedPorts.add(i);
 
-  document.querySelectorAll('.port-cell').forEach((el, idx) => {
+  document.querySelectorAll('.port-cell, .port-row').forEach((el, idx) => {
     el.classList.toggle('selected', selectedPorts.has(idx + 1));
   });
 
@@ -266,7 +357,7 @@ function togglePort(i) {
 
 function clearPortSelection() {
   selectedPorts.clear();
-  document.querySelectorAll('.port-cell').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.port-cell, .port-row').forEach(el => el.classList.remove('selected'));
   hidePortDetail();
 }
 

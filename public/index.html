@@ -99,37 +99,36 @@
           </div>
         </div>
 
+        <!-- Grille de ports (pleine largeur) -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div class="card-title" style="margin:0">Ports</div>
+            <span style="flex:1"></span>
+            <button id="btn-view-mode" class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="togglePortViewMode()">☰ Tableau</button>
+          </div>
+          <div id="port-grid"></div>
+          <div id="port-grid-hint" style="margin-top:8px;font-size:11px;color:var(--text3)">
+            Clic gauche : sélectionner · Clic droit : tout désélectionner
+          </div>
+        </div>
+
+        <div id="detail-panel"></div>
+
+        <!-- Presets + légende (en dessous, côte à côte) -->
         <div class="row2" style="align-items:start">
-
-          <!-- Grille de ports -->
-          <div>
-            <div class="card">
-              <div class="card-title">Ports</div>
-              <div id="port-grid"></div>
-              <div style="margin-top:10px;font-size:11px;color:var(--text3)">
-                Clic gauche : sélectionner · Clic droit : tout désélectionner
-              </div>
+          <div class="card">
+            <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+              Presets
+              <button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="openSettings(); showSettingsTab('presets')">Gérer</button>
             </div>
-            <div id="detail-panel"></div>
-          </div>
-
-          <!-- Presets + légende -->
-          <div>
-            <div class="card">
-              <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
-                Presets
-                <button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="openSettings(); showSettingsTab('presets')">Gérer</button>
-              </div>
-              <div id="preset-grid" class="preset-grid">
-                <!-- Généré par renderPresetButtons() dans presets.js -->
-              </div>
-            </div>
-            <div class="card">
-              <div class="card-title">Résumé</div>
-              <div id="port-legend" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div id="preset-grid" class="preset-grid">
+              <!-- Généré par renderPresetButtons() dans presets.js -->
             </div>
           </div>
-
+          <div class="card">
+            <div class="card-title">Résumé</div>
+            <div id="port-legend" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
         </div>
       </div>
     </div>

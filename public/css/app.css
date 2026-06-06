@@ -140,9 +140,30 @@ select option { background: var(--bg3); }
 .port-cell.p-unknown::after { background: rgba(85,96,128,.5); }
 .port-cell.link-up   { border-color: var(--green) !important; border-style: solid !important; }
 .port-num   { font-size: 15px; font-weight: 700; font-family: var(--mono); color: var(--text); line-height: 1; }
-.port-label { font-size: 10px; color: var(--text2); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; line-height: 1.3; }
+.port-label { font-size: 11px; font-weight: 500; color: var(--text); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; line-height: 1.3; opacity: .85; }
 .port-badges { display: flex; gap: 3px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 2px; min-height: 16px; }
 .port-badge  { font-size: 9px; font-weight: 700; font-family: var(--mono); padding: 2px 5px; border-radius: 3px; letter-spacing: .2px; }
+
+/* ── Port table view ── */
+.port-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.port-table th { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; padding: 7px 10px; border-bottom: 2px solid var(--border); text-align: left; }
+.port-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.port-table tr:last-child td { border-bottom: none; }
+.port-row { cursor: pointer; transition: background .1s; }
+.port-row:hover td { background: var(--bg4); }
+.port-row.selected td { background: rgba(59,130,246,.1); }
+.port-row td:first-child { padding-left: 14px; border-left: 3px solid transparent; }
+.port-row.p-cam td:first-child    { border-left-color: rgba(236,72,153,.8); }
+.port-row.p-ap td:first-child     { border-left-color: rgba(59,130,246,.8); }
+.port-row.p-uplink td:first-child { border-left-color: rgba(20,184,166,.8); }
+.port-row.p-voip td:first-child   { border-left-color: rgba(245,158,11,.8); }
+.port-row.p-server td:first-child { border-left-color: rgba(168,85,247,.8); }
+.port-row.p-unknown td:first-child{ border-left-color: rgba(85,96,128,.4); border-left-style: dashed; }
+.port-row.p-cam    { background: rgba(236,72,153,.05); }
+.port-row.p-ap     { background: rgba(59,130,246,.05); }
+.port-row.p-uplink { background: rgba(20,184,166,.05); }
+.port-row.p-voip   { background: rgba(245,158,11,.05); }
+.port-row.p-server { background: rgba(168,85,247,.05); }
 .badge-poe-green { background: rgba(34,197,94,.18); color: var(--green); border: 1px solid rgba(34,197,94,.35); }
 .badge-poe-red   { background: rgba(239,68,68,.18);  color: var(--red);   border: 1px solid rgba(239,68,68,.35); }
 .badge-poe-gray  { background: rgba(85,96,128,.15);  color: var(--text3); border: 1px solid rgba(85,96,128,.25); }
