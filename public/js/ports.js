@@ -60,19 +60,21 @@ document.addEventListener('mouseup', function() {
 // ── Badges ────────────────────────────────────────────────────────────────────
 
 function poeBadgeHtml(poe) {
-  if (!poe || poe === false || poe === 'false' || poe === 'Off') return '';
-  var label, cls;
+  if (!poe || poe === false || poe === 'false' || poe === 'Off')
+    return `<span class="port-badge badge-poe-gray" title="PoE désactivé">Off</span>`;
   var up = String(poe).toUpperCase();
+  var label, cls;
   if (up === '48VH' || up === '48VHV') { label = '48VH'; cls = 'badge-poe-red'; }
   else if (up === '48V')               { label = '48V';  cls = 'badge-poe-green'; }
-  else if (up === '24V')               { label = '24V';  cls = 'badge-poe-green'; }
+  else if (up === '24V')               { label = '24V';  cls = 'badge-poe-amber'; }
   else                                 { label = up;     cls = 'badge-poe-gray'; }
   return `<span class="port-badge ${cls}" title="PoE ${label}">${label}</span>`;
 }
 
 function linkBadgeHtml(portNum) {
   const s = portLinkStats[portNum];
-  if (!s || !s.up) return '';
+  if (!s)      return `<span class="port-badge badge-link-down" title="Lien inconnu">—</span>`;
+  if (!s.up)   return `<span class="port-badge badge-link-down" title="Déconnecté">↓</span>`;
   if (s.speed >= 1000) return `<span class="port-badge badge-link-1g"   title="1 Gb/s">1G</span>`;
   if (s.speed >= 100)  return `<span class="port-badge badge-link-100m" title="100 Mb/s">100M</span>`;
   if (s.speed >= 10)   return `<span class="port-badge badge-link-10m"  title="10 Mb/s">10M</span>`;
