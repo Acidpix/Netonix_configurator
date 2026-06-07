@@ -43,11 +43,13 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS switch_models (
-    key          TEXT PRIMARY KEY,
-    label        TEXT NOT NULL,
-    port_count   INTEGER NOT NULL,
-    builtin      INTEGER NOT NULL DEFAULT 0,
-    poe_vh_ports TEXT NOT NULL DEFAULT ''
+    key           TEXT PRIMARY KEY,
+    label         TEXT NOT NULL,
+    port_count    INTEGER NOT NULL,
+    builtin       INTEGER NOT NULL DEFAULT 0,
+    poe_24v_ports TEXT NOT NULL DEFAULT '',
+    poe_48v_ports TEXT NOT NULL DEFAULT '',
+    poe_vh_ports  TEXT NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS vlan_presets (
@@ -67,8 +69,18 @@ db.exec(`
 
 // ── Migration colonnes (DB existantes) ────────────────────────────────────────
 const _modelCols = db.prepare("PRAGMA table_info(switch_models)").all();
-if (!_modelCols.some(c => c.name === 'poe_vh_ports')) {
+const _hasCol = (n) => _modelCols.some(c => c.name === n);
+if (!_hasCol('poe_vh_ports')) {
   db.exec("ALTER TABLE switch_models ADD COLUMN poe_vh_ports TEXT NOT NULL DEFAULT ''");
+}
+// 24V / 48V : par défaut supportés sur tous les ports (backfill unique à l'ajout de la colonne)
+if (!_hasCol('poe_24v_ports')) {
+  db.exec("ALTER TABLE switch_models ADD COLUMN poe_24v_ports TEXT NOT NULL DEFAULT ''");
+  db.exec("UPDATE switch_models SET poe_24v_ports = '1-' || port_count");
+}
+if (!_hasCol('poe_48v_ports')) {
+  db.exec("ALTER TABLE switch_models ADD COLUMN poe_48v_ports TEXT NOT NULL DEFAULT ''");
+  db.exec("UPDATE switch_models SET poe_48v_ports = '1-' || port_count");
 }
 
 // ── Seed switch_models ────────────────────────────────────────────────────────
@@ -81,9 +93,10 @@ const seedModels = [
   { key: 'WISP-16', label: 'WISP-16 (16 ports)',      port_count: 16, builtin: 1 },
 ];
 const stmtModel = db.prepare(
-  'INSERT OR IGNORE INTO switch_models (key,label,port_count,builtin) VALUES (?,?,?,?)'
+  'INSERT OR IGNORE INTO switch_models (key,label,port_count,builtin,poe_24v_ports,poe_48v_ports,poe_vh_ports) VALUES (?,?,?,?,?,?,?)'
 );
-for (const m of seedModels) stmtModel.run(m.key, m.label, m.port_count, m.builtin);
+// 24V/48V supportés sur tous les ports par défaut ; 48VH à configurer (vide = aucun).
+for (const m of seedModels) stmtModel.run(m.key, m.label, m.port_count, m.builtin, '1-' + m.port_count, '1-' + m.port_count, '');
 
 // ── Seed vlan_presets ─────────────────────────────────────────────────────────
 const seedVlanPresets = [

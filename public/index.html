@@ -108,7 +108,7 @@
           </div>
           <div id="port-grid"></div>
           <div id="port-grid-hint" style="margin-top:8px;font-size:11px;color:var(--text3)">
-            Clic gauche : sélectionner · Clic droit : tout désélectionner
+            Clic gauche : sélectionner · Clic droit : désélectionner · Port nommé « HS » = 🔒 verrouillé (déverrouiller pour modifier)
           </div>
         </div>
 
@@ -252,11 +252,12 @@
       <!-- Tab Modèles -->
       <div id="settings-models">
         <table class="vlan-tbl" style="margin-bottom:16px">
-          <thead><tr><th>Clé</th><th>Label</th><th style="text-align:center">Ports</th><th>Ports 48VH</th><th></th></tr></thead>
+          <thead><tr><th>Clé</th><th>Label</th><th style="text-align:center">Ports</th><th>PoE par type — ports capables</th><th></th></tr></thead>
           <tbody id="settings-models-tbody"></tbody>
         </table>
         <div style="font-size:10px;color:var(--text3);margin:-8px 0 16px">
-          Ports 48VH : liste des ports supportant le 48V haute puissance (ex. <code>1-4,7</code>). Vide = aucun, le 48VH sera rétrogradé en 48V.
+          Pour chaque type de PoE, liste des ports qui le supportent (plages OK, ex. <code>1-4,7</code>). Vide = aucun port.
+          À l'application, un type non supporté est rétrogradé vers le type inférieur supporté, sinon Off.
         </div>
         <div style="display:grid;grid-template-columns:1fr 2fr 80px auto;gap:8px;align-items:end">
           <div class="field"><label>Clé</label><input id="nm-key" placeholder="WS-XX" /></div>

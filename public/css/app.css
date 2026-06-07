@@ -187,6 +187,14 @@ select option { background: var(--bg3); }
 .badge-link-100m { background: rgba(245,158,11,.18); color: var(--amber); border: 1px solid rgba(245,158,11,.35); }
 .badge-link-10m  { background: rgba(239,68,68,.18);  color: var(--red);   border: 1px solid rgba(239,68,68,.35); }
 .badge-link-down { background: rgba(85,96,128,.15);  color: var(--text3); border: 1px solid rgba(85,96,128,.25); }
+.badge-lock      { background: rgba(245,158,11,.2);   color: var(--amber); border: 1px solid rgba(245,158,11,.45); }
+
+/* ── Port hors service (HS) verrouillé ── */
+.port-cell.locked { border-color: var(--amber) !important; border-style: dashed !important; background: rgba(245,158,11,.08); }
+.port-cell.locked .port-label { color: var(--amber); }
+.port-cell.locked::after { background: var(--amber) !important; }
+.port-row.locked td { background: rgba(245,158,11,.07); }
+.port-row.locked td:first-child { border-left-color: var(--amber) !important; border-left-style: dashed; }
 
 /* ── Presets ── */
 .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }

@@ -89,7 +89,7 @@ router.post('/:id/config', async (req, res) => {
     const result = await nx.pushConfig(sw, patch);
     let message = 'Configuration appliquée avec succès';
     if (result && result.downgraded && result.downgraded.length) {
-      message += ` — 48VH non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : 48V standard appliqué`;
+      message += ` — PoE non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : rétrogradé automatiquement`;
     }
     if (result && result.confirmed === false) {
       message += ' — ⚠ confirmation anti-revert échouée : le switch risque de rétablir l\'ancienne config';
@@ -122,7 +122,7 @@ router.post('/:id/ports', async (req, res) => {
     const result = await nx.pushConfig(sw, patch);
     let message = `Preset "${preset}" appliqué sur les ports ${ports.join(', ')}`;
     if (result && result.downgraded && result.downgraded.length) {
-      message += ` — 48VH non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : 48V standard appliqué`;
+      message += ` — PoE non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : rétrogradé automatiquement`;
     }
     if (result && result.confirmed === false) {
       message += ' — ⚠ confirmation anti-revert échouée : le switch risque de rétablir l\'ancienne config';

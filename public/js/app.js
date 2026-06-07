@@ -591,15 +591,24 @@ async function loadSettingsModels() {
   const r    = await fetch('/api/models');
   const list = await r.json();
   const tbody = document.getElementById('settings-models-tbody');
+  const poeInput = (key, field, val) => `
+    <label style="display:flex;align-items:center;gap:5px;font-size:10px">
+      <span style="width:34px;color:var(--text3);text-align:right">${field === 'poe_24v_ports' ? '24V' : field === 'poe_48v_ports' ? '48V' : '48VH'}</span>
+      <input type="text" value="${(val || '').replace(/"/g, '&quot;')}" placeholder="ex: 1-4,7"
+        style="width:95px;font-family:var(--mono);font-size:11px;padding:2px 6px"
+        onchange="saveModelPoe('${key}','${field}',this.value)" />
+    </label>`;
   tbody.innerHTML = list.map(m => `
     <tr>
       <td style="font-family:var(--mono)">${m.key}</td>
       <td>${m.label}</td>
       <td style="text-align:center">${m.port_count}</td>
       <td>
-        <input type="text" value="${(m.poe_vh_ports || '').replace(/"/g, '&quot;')}"
-          placeholder="ex: 1-4,7" style="width:90px;font-family:var(--mono);font-size:11px;padding:2px 6px"
-          onchange="saveModelVh('${m.key}', this.value)" />
+        <div style="display:flex;flex-direction:column;gap:3px">
+          ${poeInput(m.key, 'poe_24v_ports', m.poe_24v_ports)}
+          ${poeInput(m.key, 'poe_48v_ports', m.poe_48v_ports)}
+          ${poeInput(m.key, 'poe_vh_ports',  m.poe_vh_ports)}
+        </div>
       </td>
       <td style="text-align:center">
         ${m.builtin ? '<span style="color:var(--text3);font-size:10px">intégré</span>' :
@@ -609,16 +618,18 @@ async function loadSettingsModels() {
   `).join('');
 }
 
-async function saveModelVh(key, value) {
+const _POE_FIELD_LABELS = { poe_24v_ports: '24V', poe_48v_ports: '48V', poe_vh_ports: '48VH' };
+
+async function saveModelPoe(key, field, value) {
   try {
     const r = await fetch(`/api/models/${key}`, {
       method : 'PUT', headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ poe_vh_ports: value }),
+      body   : JSON.stringify({ [field]: value }),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
-    await initModels();   // recharge MODEL_VH côté ports
-    toast(`Ports 48VH de ${key} : ${formatRanges(parseRanges(value)) || 'aucun'}`, 'ok');
+    await initModels();   // recharge MODEL_POE côté ports
+    toast(`Ports ${_POE_FIELD_LABELS[field]} de ${key} : ${formatRanges(parseRanges(value)) || 'aucun'}`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
 }
 

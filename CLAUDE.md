@@ -30,7 +30,7 @@ src/
   db.js            # Connexion SQLite + création tables + seed + migration JSON
   store.js         # CRUD SQLite — switches (id, name, ip, username, password, group, model, https, location, snmp_location)
   presetsStore.js  # CRUD SQLite — presets éditables (key, label, pvid, tagged, poe, ...)
-  modelsStore.js   # CRUD SQLite — modèles de switch (key, label, port_count, builtin, poe_vh_ports)
+  modelsStore.js   # CRUD SQLite — modèles de switch (key, label, port_count, builtin, poe_24v_ports, poe_48v_ports, poe_vh_ports)
   netonix.js       # Client API Netonix — login / getConfig / pushConfig / resetConfig / ping / portStats / detectModel
   presets.js       # toPortConfig() (lit presetsStore) + detectPreset()
   ranges.js        # parseRanges()/formatRanges() — plages "10,20,230-240" ↔ tableau (taggés, ports 48VH)
@@ -141,7 +141,8 @@ Définis dans `src/presets.js` (serveur) et `public/js/presets.js` (client, mêm
 - Le `pushConfig()` backend fait un **merge** avec la config existante du switch pour ne pas écraser les champs non gérés (NTP, SNMP, etc.)
 - Le `resetConfig()` ne garde que `hostname / ip / netmask / gateway` — tout le reste est réécrit
 - **Confirmation anti-revert** : après `POST /api/v1/apply`, `confirmApply()` poll `GET /api/v1/applystatus` pour prouver au switch que le lien de management a survécu — sinon le firmware rétablit l'ancienne config après ~60 s. `pushConfig()`/`resetConfig()` renvoient `confirmed: bool`
-- **48VH par modèle** : `modelsStore.poe_vh_ports` (plages, ex. `1-4,7`) liste les ports capables ; `pushConfig()` rétrograde tout 48VH en 48V sur les ports non listés et renvoie `downgraded: [ports]`
+- **PoE par type, par modèle** : `modelsStore.poe_24v_ports` / `poe_48v_ports` / `poe_vh_ports` (plages, ex. `1-4,7`) listent les ports capables de chaque type. `resolvePoeForPort()` (client + serveur) rétrograde un type non supporté vers le type inférieur supporté, sinon Off ; `pushConfig()` renvoie `downgraded: [ports]`. 24V/48V défaut = tous les ports ; 48VH défaut = aucun
+- **Verrou ports HS** : un port dont le nom (description) vaut exactement `HS` est verrouillé côté client (`isPortLocked()` dans ports.js) — preset/drag-drop/édition bloqués et exclus de `buildPortsPayload()` (jamais poussé) tant qu'on n'a pas cliqué « Déverrouiller » (`unlockedPorts`, réinitialisé au changement de switch). Sélection de port = simple (un seul à la fois)
 - `data/switches.json` est dans `.gitignore` — ne jamais le commiter (contient les credentials)
 
 ---

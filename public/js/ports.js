@@ -1,12 +1,28 @@
 'use strict';
 
 let MODEL_PORTS = {};
-let MODEL_VH    = {};   // { modelKey: [portsSupporting48VH] }
+let MODEL_POE   = {};   // { modelKey: { '24v':[ports], '48v':[ports], '48VH':[ports] } }
 let portStates       = {};
 let portDescriptions = {};
 let portRawConfigs   = {};
 let portLinkStats    = {};
 let selectedPorts    = new Set();
+let unlockedPorts    = new Set();   // ports HS déverrouillés manuellement (session)
+
+// ── Verrou ports HS (hors service) ────────────────────────────────────────────
+// Un port nommé "HS" est protégé : il faut le déverrouiller (clic) avant toute modif.
+function isPortNameHS(name) {
+  return String(name || '').trim().toUpperCase() === 'HS';
+}
+function isPortLocked(i) {
+  return isPortNameHS(portDescriptions[i]) && !unlockedPorts.has(i);
+}
+function unlockPort(i) {
+  unlockedPorts.add(i);
+  const sw = window.App && window.App.currentSw;
+  renderPortGrid(getPortCount(sw ? sw.model : null));
+  showPortDetail(portStates[i], [i]);
+}
 
 // ── Couleur des ports ─────────────────────────────────────────────────────────
 let _portColorMode = 'preset'; // 'preset' | 'poe'
@@ -44,18 +60,11 @@ function _poeModeBackground(poe) {
 // ── Drag-sélection ────────────────────────────────────────────────────────────
 let _dragSelecting = false;
 let _dragStart     = null;
-let _dragMoved     = false;
 
 document.addEventListener('mouseup', function() {
   if (!_dragSelecting) return;
   _dragSelecting = false;
-  if (!_dragMoved) {
-    togglePort(_dragStart);
-  } else {
-    const arr = [...selectedPorts].sort((a, b) => a - b);
-    if (arr.length === 1)    showPortDetail(portStates[arr[0]], arr);
-    else if (arr.length > 1) showMultiPortDetail(arr);
-  }
+  togglePort(_dragStart);   // sélection simple : un seul port à la fois
 });
 
 // ── Badges ────────────────────────────────────────────────────────────────────
@@ -88,24 +97,49 @@ async function initModels() {
   const r    = await fetch('/api/models');
   const list = await r.json();
   MODEL_PORTS = {};
-  MODEL_VH    = {};
+  MODEL_POE   = {};
   list.forEach(m => {
     MODEL_PORTS[m.key] = m.port_count;
-    MODEL_VH[m.key]    = parseRanges(m.poe_vh_ports || '', { max: m.port_count });
+    MODEL_POE[m.key]   = {
+      '24v' : parseRanges(m.poe_24v_ports || '', { max: m.port_count }),
+      '48v' : parseRanges(m.poe_48v_ports || '', { max: m.port_count }),
+      '48VH': parseRanges(m.poe_vh_ports  || '', { max: m.port_count }),
+    };
   });
   populateModelSelect();
 }
 
-// Vrai si la valeur PoE correspond au 48V haute puissance.
-function isVHPoe(poe) {
-  return poe !== false && poe !== null && poe !== undefined
-      && String(poe).toUpperCase().indexOf('VH') !== -1;
+const _POE_ORDER = ['24v', '48v', '48VH'];  // puissance croissante
+
+// Normalise une valeur PoE vers une clé canonique : '24v' | '48v' | '48VH' | false (Off).
+function poeKey(poe) {
+  if (poe === false || poe === null || poe === undefined) return false;
+  const up = String(poe).toUpperCase();
+  if (up === 'OFF' || up === 'FALSE' || up === '') return false;
+  if (up.indexOf('VH') !== -1) return '48VH';
+  if (up === '48V') return '48v';
+  if (up === '24V') return '24v';
+  return false;
 }
 
-// Vrai si le port supporte le 48VH pour ce modèle (non configuré = aucun port).
-function portSupportsVH(model, portNum) {
-  const arr = MODEL_VH[model];
+// Vrai si le port supporte ce type de PoE pour ce modèle (modèle inconnu = pas de restriction).
+function portSupportsPoeType(model, portNum, key) {
+  const caps = MODEL_POE[model];
+  if (!caps) return true;
+  const arr = caps[key];
   return Array.isArray(arr) && arr.indexOf(portNum) !== -1;
+}
+
+// Résout le PoE effectif d'un port : rétrograde vers le type inférieur supporté, sinon Off.
+function resolvePoeForPort(model, portNum, requested) {
+  const key = poeKey(requested);
+  if (!key) return { poe: false, changed: false };
+  if (portSupportsPoeType(model, portNum, key)) return { poe: requested, changed: false };
+  const idx = _POE_ORDER.indexOf(key);
+  for (let i = idx - 1; i >= 0; i--) {
+    if (portSupportsPoeType(model, portNum, _POE_ORDER[i])) return { poe: _POE_ORDER[i], changed: true };
+  }
+  return { poe: false, changed: true };
 }
 
 function populateModelSelect() {
@@ -156,8 +190,11 @@ function _renderPortTable(count) {
     const poe    = raw ? raw.poe : (p ? p.poe : false);
     const ls     = portLinkStats[i];
 
+    const locked = isPortLocked(i);
     let presetHtml;
-    if (p) {
+    if (locked) {
+      presetHtml = `<span class="port-badge badge-lock" style="display:inline-block" title="Port hors service — verrouillé">🔒 HS</span>`;
+    } else if (p) {
       presetHtml = `<span class="preset-dot" style="background:${p.color}"></span> <span style="font-weight:500">${desc || p.label}</span>`;
     } else if (raw) {
       presetHtml = `<span class="preset-dot" style="background:var(--border2)"></span> <span style="color:var(--text2)">${desc || 'VLAN&nbsp;' + (raw.pvid || 1)}</span>`;
@@ -180,7 +217,7 @@ function _renderPortTable(count) {
 
     const tr = document.createElement('tr');
     const cls = key && key !== 'unknown' && PRESETS[key] ? ' p-' + key : (key === 'unknown' ? ' p-unknown' : '');
-    tr.className = 'port-row' + cls + (selectedPorts.has(i) ? ' selected' : '');
+    tr.className = 'port-row' + cls + (selectedPorts.has(i) ? ' selected' : '') + (locked ? ' locked' : '');
     tr.innerHTML = `
       <td style="font-family:var(--mono);font-weight:700;font-size:13px">${i}</td>
       <td>${presetHtml}</td>
@@ -193,7 +230,7 @@ function _renderPortTable(count) {
     `;
 
     const portNum = i;
-    tr.onmousedown    = function(e) { e.preventDefault(); _dragSelecting = true; _dragStart = portNum; _dragMoved = false; };
+    tr.onmousedown    = function(e) { e.preventDefault(); _dragSelecting = true; _dragStart = portNum; };
     tr.oncontextmenu  = function(e) { e.preventDefault(); clearPortSelection(); };
     tr.onmouseenter   = function(e) { showPortTooltip(e, portNum); };
     tr.onmouseleave   = function()  { hidePortTooltip(); };
@@ -234,17 +271,19 @@ function renderPortGrid(count) {
     const poeSrc = raw ? raw.poe : (p ? p.poe : null);
 
     const isLinkUp = portLinkStats[i] && portLinkStats[i].up;
+    const locked   = isPortLocked(i);
+    const lockCls  = locked ? ' locked' : '';
 
     const cell = document.createElement('div');
     cell.id = `port-${i}`;
 
     if (_portColorMode === 'poe') {
-      cell.className     = 'port-cell' + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
-      cell.style.background  = _poeModeBackground(poeSrc);
+      cell.className     = 'port-cell' + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '') + lockCls;
+      cell.style.background  = locked ? '' : _poeModeBackground(poeSrc);
       cell.style.borderColor = '';  // géré par .link-up
     } else {
       // Mode preset (défaut)
-      cell.className     = 'port-cell' + (p ? ' ' + p.cls : '') + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '');
+      cell.className     = 'port-cell' + (p ? ' ' + p.cls : '') + (selectedPorts.has(i) ? ' selected' : '') + (isLinkUp ? ' link-up' : '') + lockCls;
       cell.style.background  = '';
       cell.style.borderColor = '';  // géré par .link-up
     }
@@ -252,25 +291,13 @@ function renderPortGrid(count) {
     cell.onmouseenter  = e => showPortTooltip(e, i);
     cell.onmouseleave  = () => hidePortTooltip();
 
-    // Drag-select
+    // Sélection simple au clic (un seul port à la fois)
     const portNum = i;
     cell.onmousedown = function(e) {
       e.preventDefault();
       _dragSelecting = true;
       _dragStart     = portNum;
-      _dragMoved     = false;
     };
-    cell.addEventListener('mouseenter', function() {
-      if (!_dragSelecting || portNum === _dragStart) return;
-      _dragMoved = true;
-      const a = Math.min(_dragStart, portNum);
-      const b = Math.max(_dragStart, portNum);
-      selectedPorts.clear();
-      for (let n = a; n <= b; n++) selectedPorts.add(n);
-      document.querySelectorAll('.port-cell').forEach(function(el, idx) {
-        el.classList.toggle('selected', selectedPorts.has(idx + 1));
-      });
-    });
 
     // Drag & drop preset → port
     cell.ondragover = function(e) {
@@ -285,19 +312,20 @@ function renderPortGrid(count) {
       this.classList.remove('drag-over');
       const presetKey = e.dataTransfer.getData('preset-key');
       if (!presetKey || !PRESETS[presetKey]) return;
-      // Si ce port est parmi les sélectionnés → applique sur toute la sélection
-      // Sinon → applique uniquement sur ce port
-      if (!selectedPorts.has(portNum) || selectedPorts.size === 0) {
-        selectedPorts.clear();
-        selectedPorts.add(portNum);
+      if (isPortLocked(portNum)) {
+        toast(`Port ${portNum} verrouillé (HS) — déverrouillez-le d'abord`, 'info');
+        return;
       }
+      // Applique uniquement sur ce port (sélection simple)
+      selectedPorts.clear();
+      selectedPorts.add(portNum);
       applyPreset(presetKey);
     };
 
     cell.innerHTML = `
       <div class="port-num">${i}</div>
       <div class="port-label">${cellLabel}</div>
-      <div class="port-badges">${poeBadgeHtml(poeSrc)}${linkBadgeHtml(i)}</div>
+      <div class="port-badges">${locked ? '<span class="port-badge badge-lock" title="Port hors service — verrouillé">🔒 HS</span>' : poeBadgeHtml(poeSrc) + linkBadgeHtml(i)}</div>
     `;
     grid.appendChild(cell);
   }
@@ -320,6 +348,7 @@ function showPortTooltip(e, i) {
 
   const titleColor = preset ? preset.color : (raw ? 'var(--text)' : 'var(--text3)');
   let html = `<div class="tt-title" style="color:${titleColor}">${title}</div>`;
+  if (isPortLocked(i)) html += `<div class="tt-row"><span>🔒 État</span><b style="color:var(--amber)">HS — verrouillé</b></div>`;
 
   // Config réelle du port (raw) prioritaire ; le preset n'est qu'un fallback d'étiquette.
   const cfg = raw || preset;
@@ -359,22 +388,18 @@ function hidePortTooltip() {
 
 // ── Sélection ─────────────────────────────────────────────────────────────────
 
+// Sélection simple : un seul port à la fois (re-cliquer le port sélectionné le désélectionne).
 function togglePort(i) {
-  if (selectedPorts.has(i)) selectedPorts.delete(i);
-  else selectedPorts.add(i);
+  const wasOnlySelected = selectedPorts.size === 1 && selectedPorts.has(i);
+  selectedPorts.clear();
+  if (!wasOnlySelected) selectedPorts.add(i);
 
   document.querySelectorAll('.port-cell, .port-row').forEach((el, idx) => {
     el.classList.toggle('selected', selectedPorts.has(idx + 1));
   });
 
-  if (selectedPorts.size === 1) {
-    const portNum = [...selectedPorts][0];
-    showPortDetail(portStates[portNum], [portNum]);
-  } else if (selectedPorts.size > 1) {
-    showMultiPortDetail([...selectedPorts]);
-  } else {
-    hidePortDetail();
-  }
+  if (selectedPorts.size === 1) showPortDetail(portStates[i], [i]);
+  else hidePortDetail();
 }
 
 function clearPortSelection() {
@@ -389,7 +414,12 @@ let _pendingPresetKey = null;
 
 function applyPreset(key) {
   if (!selectedPorts.size) {
-    toast('Sélectionnez d\'abord un ou plusieurs ports', 'info');
+    toast('Sélectionnez d\'abord un port', 'info');
+    return;
+  }
+  const locked = [...selectedPorts].filter(isPortLocked);
+  if (locked.length) {
+    toast(`Port ${locked.join(', ')} verrouillé (HS) — déverrouillez-le d'abord`, 'info');
     return;
   }
   const hasCurrent = [...selectedPorts].some(p => portStates[p] !== null);
@@ -411,16 +441,13 @@ function doApplyPreset(key) {
   selectedPorts.forEach(portNum => {
     portStates[portNum] = key;
 
-    // 48VH uniquement sur les ports capables — sinon 48V standard.
-    let poe = p.poe;
-    if (isVHPoe(poe) && !portSupportsVH(model, portNum)) {
-      poe = '48v';
-      downgraded.push(portNum);
-    }
+    // Chaque type de PoE n'est appliqué que sur les ports capables — sinon rétrogradé.
+    const res = resolvePoeForPort(model, portNum, p.poe);
+    if (res.changed) downgraded.push(portNum);
 
     portRawConfigs[portNum] = {
       enabled      : p.enabled !== false,
-      poe          : poe,
+      poe          : res.poe,
       pvid         : p.pvid !== undefined ? p.pvid : 1,
       tagged       : Array.isArray(p.tagged) ? p.tagged.slice() : [],
       stp          : !!p.stp,
@@ -434,7 +461,7 @@ function doApplyPreset(key) {
   clearPortSelection();
   toast(`"${p.label}" appliqué sur ${count} port${count > 1 ? 's' : ''}`, 'ok');
   if (downgraded.length) {
-    toast(`48VH non supporté sur le(s) port(s) ${formatRanges(downgraded)} → 48V appliqué`, 'info');
+    toast(`PoE non supporté sur le(s) port(s) ${formatRanges(downgraded)} → rétrogradé`, 'info');
   }
 }
 
@@ -592,11 +619,31 @@ function showPortDetail(key, ports) {
   if (ports.length > 1) return showMultiPortDetail(ports);
 
   const portNum = ports[0];
+
+  // Port hors service (HS) verrouillé : on n'affiche pas les contrôles tant qu'il n'est pas déverrouillé.
+  if (isPortLocked(portNum)) {
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:18px">🔒</span>
+        <span style="font-weight:600;font-size:13px;color:var(--amber)">Port ${portNum} — Hors service (HS)</span>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+        Ce port est marqué <b>HS</b> et verrouillé pour éviter toute modification accidentelle.
+        Déverrouillez-le pour modifier sa configuration.
+      </div>
+      <button class="btn btn-primary" style="font-size:12px" onclick="unlockPort(${portNum})">🔓 Déverrouiller ce port</button>
+    `;
+    return;
+  }
+
   const preset  = key && key !== 'unknown' ? PRESETS[key] : null;
   const raw     = portRawConfigs[portNum] || null;
   const link    = portLinkStats[portNum]  || null;
   const swDetail = window.App && window.App.currentSw;
-  const vhOk     = portSupportsVH(swDetail ? swDetail.model : null, portNum);
+  const _model   = swDetail ? swDetail.model : null;
+  const sup24    = portSupportsPoeType(_model, portNum, '24v');
+  const sup48    = portSupportsPoeType(_model, portNum, '48v');
+  const vhOk     = portSupportsPoeType(_model, portNum, '48VH');
 
   // Config réelle du port (raw) prioritaire pour les valeurs éditables ;
   // le preset ne sert qu'au libellé/couleur ci-dessous.
@@ -641,11 +688,11 @@ function showPortDetail(key, ports) {
 
     <div class="detail-row" style="align-items:center">
       <span class="dl">PoE</span>
-      <select style="${s};width:110px" onchange="updatePortField(${portNum},'poe',this.value==='false'?false:this.value)">
+      <select style="${s};width:150px" onchange="updatePortField(${portNum},'poe',this.value==='false'?false:this.value)">
         <option value="false" ${poeVal==='false'?'selected':''}>OFF</option>
-        <option value="24v"   ${poeVal==='24v'?'selected':''}>24V</option>
-        <option value="48v"   ${poeVal==='48v'?'selected':''}>48V</option>
-        <option value="48VH"  ${poeVal==='48VH'||poeVal==='48vHV'?'selected':''} ${vhOk?'':'disabled'} title="${vhOk?'':'Non supporté sur ce port'}">48VH${vhOk?'':' (non supporté)'}</option>
+        <option value="24v"   ${poeVal==='24v'?'selected':''} ${sup24?'':'disabled'}>24V${sup24?'':' (non supporté)'}</option>
+        <option value="48v"   ${poeVal==='48v'?'selected':''} ${sup48?'':'disabled'}>48V${sup48?'':' (non supporté)'}</option>
+        <option value="48VH"  ${poeVal==='48VH'||poeVal==='48vHV'?'selected':''} ${vhOk?'':'disabled'}>48VH${vhOk?'':' (non supporté)'}</option>
       </select>
     </div>
 
@@ -735,6 +782,7 @@ function resetPortStates() {
   portRawConfigs   = {};
   portLinkStats    = {};
   selectedPorts.clear();
+  unlockedPorts.clear();
 }
 
 function updatePortField(portNum, field, value) {
@@ -742,18 +790,21 @@ function updatePortField(portNum, field, value) {
     portRawConfigs[portNum] = { enabled: true, poe: false, pvid: 1, tagged: [], stp: false, storm_control: false, qos: false, description: '' };
   }
 
-  // 48VH refusé sur un port non capable → 48V standard.
-  let vhDowngraded = false;
-  if (field === 'poe' && isVHPoe(value)) {
-    const sw = window.App && window.App.currentSw;
-    if (!portSupportsVH(sw ? sw.model : null, portNum)) {
-      value = '48v';
-      vhDowngraded = true;
-    }
+  // PoE non supporté sur ce port → rétrogradé vers le type inférieur supporté (ou Off).
+  let poeDowngraded = false;
+  if (field === 'poe') {
+    const sw  = window.App && window.App.currentSw;
+    const res = resolvePoeForPort(sw ? sw.model : null, portNum, value);
+    if (res.changed) { value = res.poe; poeDowngraded = true; }
   }
 
   portRawConfigs[portNum][field] = value;
-  if (field === 'description') portDescriptions[portNum] = value;
+  if (field === 'description') {
+    portDescriptions[portNum] = value;
+    // L'utilisateur tape "HS" sur un port en cours d'édition : on le garde déverrouillé
+    // pour cette session (le verrou se réengagera au prochain chargement de la config).
+    if (isPortNameHS(value)) unlockedPorts.add(portNum);
+  }
 
   let detected = null;
   try { detected = detectPreset(portRawConfigs[portNum]); } catch (e) {}
@@ -764,8 +815,8 @@ function updatePortField(portNum, field, value) {
   const sw = window.App && window.App.currentSw;
   renderPortGrid(getPortCount(sw ? sw.model : null));
 
-  if (vhDowngraded) {
-    toast(`Port ${portNum} ne supporte pas le 48VH → 48V appliqué`, 'info');
+  if (poeDowngraded) {
+    toast(`Port ${portNum} ne supporte pas ce PoE → rétrogradé`, 'info');
     showPortDetail(portStates[portNum], [portNum]);  // rafraîchit le select PoE
   }
 }
@@ -775,6 +826,7 @@ function buildPortsPayload(count) {
   for (let i = 1; i <= count; i++) {
     const raw = portRawConfigs[i];
     if (!raw) continue;
+    if (isPortLocked(i)) continue;   // port HS verrouillé → jamais modifié par un push
     payload[String(i)] = {
       enabled      : raw.enabled !== false,
       poe          : raw.poe || false,

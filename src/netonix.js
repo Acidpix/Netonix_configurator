@@ -188,19 +188,48 @@ function toNativePoe(poe) {
   return String(poe);
 }
 
-// Vrai si la valeur PoE correspond au 48V haute puissance (48VH / 48VHV / 48vHV).
-function isVHPoe(poe) {
-  return poe !== false && poe !== null && poe !== undefined
-      && String(poe).toUpperCase().indexOf('VH') !== -1;
+// Normalise une valeur PoE vers une clé canonique : '24v' | '48v' | '48VH' | false (Off).
+function _poeKey(poe) {
+  if (poe === false || poe === null || poe === undefined) return false;
+  var up = String(poe).toUpperCase();
+  if (up === 'OFF' || up === 'FALSE' || up === '') return false;
+  if (up.indexOf('VH') !== -1) return '48VH';
+  if (up === '48V') return '48v';
+  if (up === '24V') return '24v';
+  return false;
 }
 
-// Liste des ports supportant le 48VH pour le modèle du switch.
-// Renvoie [] si le modèle est inconnu ou non configuré → 48VH retrogradé partout.
-function vhPortsFor(sw) {
-  if (!sw || !sw.model) return [];
-  const m = modelsStore.findByKey(sw.model);
-  if (!m) return [];
-  return parseRanges(m.poe_vh_ports || '');
+var _POE_ORDER = ['24v', '48v', '48VH'];  // puissance croissante
+
+// Capacités PoE par type pour le modèle du switch, ou null si modèle inconnu (= pas de restriction).
+function poeCapsFor(sw) {
+  if (!sw || !sw.model) return null;
+  var m = modelsStore.findByKey(sw.model);
+  if (!m) return null;
+  return {
+    '24v' : parseRanges(m.poe_24v_ports || ''),
+    '48v' : parseRanges(m.poe_48v_ports || ''),
+    '48VH': parseRanges(m.poe_vh_ports  || ''),
+  };
+}
+
+function _portSupports(caps, portNum, key) {
+  if (!caps) return true;  // modèle inconnu → on ne restreint pas
+  var arr = caps[key];
+  return Array.isArray(arr) && arr.indexOf(portNum) !== -1;
+}
+
+// Résout le PoE effectif d'un port : si le type demandé n'est pas supporté, on rétrograde
+// vers le type supporté le plus puissant en-dessous, sinon Off. Renvoie { poe, changed }.
+function resolvePoeForPort(caps, portNum, requested) {
+  var key = _poeKey(requested);
+  if (!key) return { poe: false, changed: false };          // Off toujours autorisé
+  if (_portSupports(caps, portNum, key)) return { poe: requested, changed: false };
+  var idx = _POE_ORDER.indexOf(key);
+  for (var i = idx - 1; i >= 0; i--) {
+    if (_portSupports(caps, portNum, _POE_ORDER[i])) return { poe: _POE_ORDER[i], changed: true };
+  }
+  return { poe: false, changed: true };                     // aucun type supporté → Off
 }
 
 async function pushConfig(sw, patch) {
@@ -212,7 +241,7 @@ async function pushConfig(sw, patch) {
   var nativeVlans = JSON.parse(JSON.stringify(config.VLANs || []));
   var portCount   = nativePorts.length;
 
-  var vhPorts    = vhPortsFor(sw);
+  var poeCaps    = poeCapsFor(sw);
   var downgraded = [];
 
   var patchPorts = patch.ports || {};
@@ -227,10 +256,10 @@ async function pushConfig(sw, patch) {
     if (cfg.description !== undefined && cfg.description !== null) portObj.Name   = cfg.description;
     if (cfg.enabled !== undefined)                                  portObj.Enable = cfg.enabled !== false;
     if (cfg.poe !== undefined) {
-      var poe = cfg.poe;
-      // Sécurité : 48VH uniquement sur les ports déclarés capables, sinon 48V standard.
-      if (isVHPoe(poe) && vhPorts.indexOf(portNum) === -1) { poe = '48v'; downgraded.push(portNum); }
-      portObj.PoE = toNativePoe(poe);
+      // Sécurité : chaque type de PoE n'est appliqué que sur les ports déclarés capables.
+      var resolved = resolvePoeForPort(poeCaps, portNum, cfg.poe);
+      if (resolved.changed) downgraded.push(portNum);
+      portObj.PoE = toNativePoe(resolved.poe);
     }
     if (cfg.stp !== undefined)                                      portObj.STP    = !!cfg.stp;
   });

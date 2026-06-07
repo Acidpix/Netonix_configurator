@@ -23,10 +23,10 @@ router.post('/', (req, res) => {
   }
 });
 
-// PUT /api/models/:key — met à jour les ports 48VH (poe_vh_ports)
+// PUT /api/models/:key — met à jour les ports PoE par type (poe_24v_ports / poe_48v_ports / poe_vh_ports)
 router.put('/:key', (req, res) => {
   try {
-    res.json(modelsStore.setVhPorts(req.params.key, req.body.poe_vh_ports || ''));
+    res.json(modelsStore.setPoePorts(req.params.key, req.body));
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
