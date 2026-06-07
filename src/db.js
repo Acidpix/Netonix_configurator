@@ -43,10 +43,11 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS switch_models (
-    key        TEXT PRIMARY KEY,
-    label      TEXT NOT NULL,
-    port_count INTEGER NOT NULL,
-    builtin    INTEGER NOT NULL DEFAULT 0
+    key          TEXT PRIMARY KEY,
+    label        TEXT NOT NULL,
+    port_count   INTEGER NOT NULL,
+    builtin      INTEGER NOT NULL DEFAULT 0,
+    poe_vh_ports TEXT NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS vlan_presets (
@@ -63,6 +64,12 @@ db.exec(`
     value TEXT NOT NULL
   );
 `);
+
+// ── Migration colonnes (DB existantes) ────────────────────────────────────────
+const _modelCols = db.prepare("PRAGMA table_info(switch_models)").all();
+if (!_modelCols.some(c => c.name === 'poe_vh_ports')) {
+  db.exec("ALTER TABLE switch_models ADD COLUMN poe_vh_ports TEXT NOT NULL DEFAULT ''");
+}
 
 // ── Seed switch_models ────────────────────────────────────────────────────────
 const seedModels = [

@@ -5,10 +5,11 @@ const db = require('./db');
 function _row(r) {
   if (!r) return null;
   return {
-    key       : r.key,
-    label     : r.label,
-    port_count: r.port_count,
-    builtin   : r.builtin === 1,
+    key         : r.key,
+    label       : r.label,
+    port_count  : r.port_count,
+    builtin     : r.builtin === 1,
+    poe_vh_ports: r.poe_vh_ports || '',
   };
 }
 
@@ -26,6 +27,13 @@ function insert(data) {
   return findByKey(data.key);
 }
 
+// Met à jour la liste des ports supportant le 48VH (autorisé sur les modèles intégrés).
+function setVhPorts(key, value) {
+  if (!findByKey(key)) throw new Error(`Modèle "${key}" introuvable`);
+  db.prepare('UPDATE switch_models SET poe_vh_ports = ? WHERE key = ?').run(value || '', key);
+  return findByKey(key);
+}
+
 function remove(key) {
   const m = findByKey(key);
   if (!m) return;
@@ -33,4 +41,4 @@ function remove(key) {
   db.prepare('DELETE FROM switch_models WHERE key = ? AND builtin = 0').run(key);
 }
 
-module.exports = { loadAll, findByKey, insert, remove };
+module.exports = { loadAll, findByKey, insert, setVhPorts, remove };

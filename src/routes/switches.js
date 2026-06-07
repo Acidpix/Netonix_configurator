@@ -86,8 +86,15 @@ router.post('/:id/config', async (req, res) => {
     if (sw.snmp_location) {
       patch.system = { ...(patch.system || {}), location: sw.snmp_location };
     }
-    await nx.pushConfig(sw, patch);
-    res.json({ ok: true, message: 'Configuration appliquée avec succès' });
+    const result = await nx.pushConfig(sw, patch);
+    let message = 'Configuration appliquée avec succès';
+    if (result && result.downgraded && result.downgraded.length) {
+      message += ` — 48VH non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : 48V standard appliqué`;
+    }
+    if (result && result.confirmed === false) {
+      message += ' — ⚠ confirmation anti-revert échouée : le switch risque de rétablir l\'ancienne config';
+    }
+    res.json({ ok: true, message, downgraded: (result && result.downgraded) || [], confirmed: result ? result.confirmed : null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -112,8 +119,15 @@ router.post('/:id/ports', async (req, res) => {
     const patch = { ports: portsPayload };
     if (vlans) patch.vlans = vlans;
 
-    await nx.pushConfig(sw, patch);
-    res.json({ ok: true, message: `Preset "${preset}" appliqué sur les ports ${ports.join(', ')}` });
+    const result = await nx.pushConfig(sw, patch);
+    let message = `Preset "${preset}" appliqué sur les ports ${ports.join(', ')}`;
+    if (result && result.downgraded && result.downgraded.length) {
+      message += ` — 48VH non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : 48V standard appliqué`;
+    }
+    if (result && result.confirmed === false) {
+      message += ' — ⚠ confirmation anti-revert échouée : le switch risque de rétablir l\'ancienne config';
+    }
+    res.json({ ok: true, message, downgraded: (result && result.downgraded) || [], confirmed: result ? result.confirmed : null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

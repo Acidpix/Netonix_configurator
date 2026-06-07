@@ -4,6 +4,8 @@ const fetch        = require('node-fetch');
 const https        = require('https');
 const { execFile } = require('child_process');
 const { SWITCH_TIMEOUT, IGNORE_SSL } = require('./config');
+const modelsStore  = require('./modelsStore');
+const { parseRanges } = require('./ranges');
 
 const sslAgent = new https.Agent({ rejectUnauthorized: !IGNORE_SSL });
 
@@ -136,12 +138,69 @@ async function getConfig(sw) {
   return { config: result.data, auth: result.auth };
 }
 
+function _delay(ms) {
+  return new Promise(function (r) { setTimeout(r, ms); });
+}
+
+// Détecte si l'apply Netonix est terminé d'après la réponse de /api/v1/applystatus.
+// Format observé : { result: "OK", reverted: false }. On reste tolérant aux variantes.
+function _isApplyDone(s) {
+  if (!s || typeof s !== 'object') return false;
+  var result = String(s.result || s.Result || s.Status || s.status || s.State || s.state || '').toLowerCase();
+  if (result && /(ok|done|complete|applied|success|idle|finish|ready)/.test(result)) return true;
+  if (s.Applying === false || s.applying === false) return true;
+  if (s.Done === true || s.done === true || s.Finished === true || s.finished === true) return true;
+  if (typeof s.Progress === 'number' && s.Progress >= 100) return true;
+  if (typeof s.progress === 'number' && s.progress >= 100) return true;
+  return false;
+}
+
+// Confirme l'application : le firmware Netonix arme un "revert timer" à l'apply et
+// annule le rollback dès que le client revient prouver que le lien de management a
+// survécu, en interrogeant /api/v1/applystatus (comme le fait l'UI web). Sans ce
+// poll, la config est rétablie après ~1 min.
+// Renvoie true si l'apply est confirmé, false si le switch a rétabli l'ancienne config.
+async function confirmApply(sw, auth) {
+  var confirmed = false;
+  for (var i = 0; i < 20; i++) {
+    await _delay(700);
+    try {
+      var r = await get(sw, '/api/v1/applystatus?_=' + Date.now(), auth);
+      auth = r.auth;
+      var s = r.data || {};
+      if (s.reverted === true) { confirmed = false; break; }  // le switch a rollback
+      confirmed = true;                                        // client revenu → connectivité prouvée
+      if (_isApplyDone(s)) break;                              // apply terminé → on arrête de poller
+    } catch (e) {
+      // Le lien de management peut blipper pendant l'apply — on réessaie avec une session fraîche.
+      invalidateSession(sw.ip);
+      try { auth = await getAuth(sw); } catch (_) {}
+    }
+  }
+  return confirmed;
+}
+
 function toNativePoe(poe) {
   if (!poe || poe === false || poe === 'false' || poe === 'Off') return 'Off';
   if (poe === '24v')                      return '24V';
   if (poe === '48v')                      return '48V';
   if (poe === '48VH' || poe === '48vHV') return '48VH';
   return String(poe);
+}
+
+// Vrai si la valeur PoE correspond au 48V haute puissance (48VH / 48VHV / 48vHV).
+function isVHPoe(poe) {
+  return poe !== false && poe !== null && poe !== undefined
+      && String(poe).toUpperCase().indexOf('VH') !== -1;
+}
+
+// Liste des ports supportant le 48VH pour le modèle du switch.
+// Renvoie [] si le modèle est inconnu ou non configuré → 48VH retrogradé partout.
+function vhPortsFor(sw) {
+  if (!sw || !sw.model) return [];
+  const m = modelsStore.findByKey(sw.model);
+  if (!m) return [];
+  return parseRanges(m.poe_vh_ports || '');
 }
 
 async function pushConfig(sw, patch) {
@@ -152,6 +211,9 @@ async function pushConfig(sw, patch) {
   var nativePorts = JSON.parse(JSON.stringify(config.Ports || []));
   var nativeVlans = JSON.parse(JSON.stringify(config.VLANs || []));
   var portCount   = nativePorts.length;
+
+  var vhPorts    = vhPortsFor(sw);
+  var downgraded = [];
 
   var patchPorts = patch.ports || {};
   Object.keys(patchPorts).forEach(function(numStr) {
@@ -164,7 +226,12 @@ async function pushConfig(sw, patch) {
     if (!portObj) return;
     if (cfg.description !== undefined && cfg.description !== null) portObj.Name   = cfg.description;
     if (cfg.enabled !== undefined)                                  portObj.Enable = cfg.enabled !== false;
-    if (cfg.poe !== undefined)                                      portObj.PoE    = toNativePoe(cfg.poe);
+    if (cfg.poe !== undefined) {
+      var poe = cfg.poe;
+      // Sécurité : 48VH uniquement sur les ports déclarés capables, sinon 48V standard.
+      if (isVHPoe(poe) && vhPorts.indexOf(portNum) === -1) { poe = '48v'; downgraded.push(portNum); }
+      portObj.PoE = toNativePoe(poe);
+    }
     if (cfg.stp !== undefined)                                      portObj.STP    = !!cfg.stp;
   });
 
@@ -216,6 +283,8 @@ async function pushConfig(sw, patch) {
   });
   await post(sw, '/api/v1/config', merged, auth);
   await post(sw, '/api/v1/apply', {}, auth);
+  var confirmed = await confirmApply(sw, auth);
+  return { downgraded: downgraded, confirmed: confirmed };
 }
 
 async function resetConfig(sw, options) {
@@ -233,7 +302,8 @@ async function resetConfig(sw, options) {
   };
   await post(sw, '/api/v1/config', newConfig, auth);
   await post(sw, '/api/v1/apply', {}, auth);
-  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address };
+  var confirmed = await confirmApply(sw, auth);
+  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address, confirmed: confirmed };
 }
 
 function ping(sw) {

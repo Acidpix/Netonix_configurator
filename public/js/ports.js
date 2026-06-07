@@ -1,6 +1,7 @@
 'use strict';
 
 let MODEL_PORTS = {};
+let MODEL_VH    = {};   // { modelKey: [portsSupporting48VH] }
 let portStates       = {};
 let portDescriptions = {};
 let portRawConfigs   = {};
@@ -87,8 +88,24 @@ async function initModels() {
   const r    = await fetch('/api/models');
   const list = await r.json();
   MODEL_PORTS = {};
-  list.forEach(m => { MODEL_PORTS[m.key] = m.port_count; });
+  MODEL_VH    = {};
+  list.forEach(m => {
+    MODEL_PORTS[m.key] = m.port_count;
+    MODEL_VH[m.key]    = parseRanges(m.poe_vh_ports || '', { max: m.port_count });
+  });
   populateModelSelect();
+}
+
+// Vrai si la valeur PoE correspond au 48V haute puissance.
+function isVHPoe(poe) {
+  return poe !== false && poe !== null && poe !== undefined
+      && String(poe).toUpperCase().indexOf('VH') !== -1;
+}
+
+// Vrai si le port supporte le 48VH pour ce modèle (non configuré = aucun port).
+function portSupportsVH(model, portNum) {
+  const arr = MODEL_VH[model];
+  return Array.isArray(arr) && arr.indexOf(portNum) !== -1;
 }
 
 function populateModelSelect() {
@@ -134,9 +151,9 @@ function _renderPortTable(count) {
     const raw  = portRawConfigs[i] || null;
     const desc = portDescriptions[i] || '';
     const cfg  = p || raw || {};
-    const pvid   = p ? p.pvid   : (raw && raw.pvid  !== undefined ? raw.pvid  : 1);
-    const tagged = p ? (p.tagged || []) : (Array.isArray(raw && raw.tagged) ? raw.tagged : []);
-    const poe    = p ? p.poe    : (raw ? raw.poe : false);
+    const pvid   = raw && raw.pvid !== undefined ? raw.pvid : (p ? p.pvid : 1);
+    const tagged = Array.isArray(raw && raw.tagged) ? raw.tagged : (p ? (p.tagged || []) : []);
+    const poe    = raw ? raw.poe : (p ? p.poe : false);
     const ls     = portLinkStats[i];
 
     let presetHtml;
@@ -169,9 +186,7 @@ function _renderPortTable(count) {
       <td>${presetHtml}</td>
       <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${pvid}</td>
       <td style="font-family:var(--mono);color:var(--text2);font-size:11px">${
-        tagged.length === 0 ? '<span style="color:var(--text3)">—</span>'
-        : tagged.length <= 3 ? tagged.join(', ')
-        : tagged.slice(0, 3).join(', ') + ' <span style="color:var(--text3)">+' + (tagged.length - 3) + '</span>'
+        tagged.length === 0 ? '<span style="color:var(--text3)">—</span>' : formatRanges(tagged)
       }</td>
       <td>${poeHtml}</td>
       <td style="font-size:11px">${linkHtml}</td>
@@ -206,17 +221,17 @@ function renderPortGrid(count) {
     const raw  = portRawConfigs[i] || null;
     const desc = portDescriptions[i] || '';
 
-    let cellLabel, poeSrc;
+    let cellLabel;
     if (p) {
       cellLabel = desc || p.label;
-      poeSrc    = p.poe;
     } else if (raw) {
       cellLabel = desc || ('VLAN ' + (raw.pvid !== undefined ? raw.pvid : 1));
-      poeSrc    = raw.poe;
     } else {
       cellLabel = desc || 'Libre';
-      poeSrc    = null;
     }
+    // PoE réel du port (raw) prioritaire — le preset n'est qu'une étiquette VLAN,
+    // son PoE par défaut ne reflète pas forcément l'état réel du port.
+    const poeSrc = raw ? raw.poe : (p ? p.poe : null);
 
     const isLinkUp = portLinkStats[i] && portLinkStats[i].up;
 
@@ -306,17 +321,18 @@ function showPortTooltip(e, i) {
   const titleColor = preset ? preset.color : (raw ? 'var(--text)' : 'var(--text3)');
   let html = `<div class="tt-title" style="color:${titleColor}">${title}</div>`;
 
-  const cfg = preset || raw;
+  // Config réelle du port (raw) prioritaire ; le preset n'est qu'un fallback d'étiquette.
+  const cfg = raw || preset;
   if (cfg) {
-    const pvid   = preset ? preset.pvid   : (raw.pvid !== undefined ? raw.pvid : 1);
-    const tagged = preset ? (preset.tagged || []) : (Array.isArray(raw.tagged) ? raw.tagged : []);
-    const poe    = preset ? preset.poe    : raw.poe;
+    const pvid   = cfg.pvid !== undefined ? cfg.pvid : 1;
+    const tagged = Array.isArray(cfg.tagged) ? cfg.tagged : [];
+    const poe    = cfg.poe;
     html += `<div class="tt-row"><span>VLAN natif</span><b>VLAN ${pvid}</b></div>`;
-    html += `<div class="tt-row"><span>Taggés</span><b>${tagged.length ? tagged.join(', ') : '—'}</b></div>`;
+    html += `<div class="tt-row"><span>Taggés</span><b>${tagged.length ? formatRanges(tagged) : '—'}</b></div>`;
     html += `<div class="tt-row"><span>PoE</span><b>${poe && poe !== false ? String(poe).toUpperCase() : 'OFF'}</b></div>`;
-    if (preset && preset.storm_control || raw && raw.storm_control) html += `<div class="tt-row"><span>Storm-control</span><b>ON</b></div>`;
-    if (preset && preset.stp           || raw && raw.stp)           html += `<div class="tt-row"><span>STP portfast</span><b>ON</b></div>`;
-    if (preset && preset.qos           || raw && raw.qos)           html += `<div class="tt-row"><span>QoS DSCP</span><b>ON</b></div>`;
+    if (cfg.storm_control) html += `<div class="tt-row"><span>Storm-control</span><b>ON</b></div>`;
+    if (cfg.stp)           html += `<div class="tt-row"><span>STP portfast</span><b>ON</b></div>`;
+    if (cfg.qos)           html += `<div class="tt-row"><span>QoS DSCP</span><b>ON</b></div>`;
   }
 
   const ls = portLinkStats[i];
@@ -386,12 +402,40 @@ function applyPreset(key) {
 }
 
 function doApplyPreset(key) {
-  const count = selectedPorts.size;
-  selectedPorts.forEach(p => { portStates[p] = key; });
+  const p         = PRESETS[key];
+  const count     = selectedPorts.size;
   const currentSw = window.App?.currentSw;
-  renderPortGrid(getPortCount(currentSw?.model));
+  const model     = currentSw?.model;
+  const downgraded = [];
+
+  selectedPorts.forEach(portNum => {
+    portStates[portNum] = key;
+
+    // 48VH uniquement sur les ports capables — sinon 48V standard.
+    let poe = p.poe;
+    if (isVHPoe(poe) && !portSupportsVH(model, portNum)) {
+      poe = '48v';
+      downgraded.push(portNum);
+    }
+
+    portRawConfigs[portNum] = {
+      enabled      : p.enabled !== false,
+      poe          : poe,
+      pvid         : p.pvid !== undefined ? p.pvid : 1,
+      tagged       : Array.isArray(p.tagged) ? p.tagged.slice() : [],
+      stp          : !!p.stp,
+      storm_control: !!p.storm_control,
+      qos          : !!p.qos,
+      description  : portDescriptions[portNum] || '',
+    };
+  });
+
+  renderPortGrid(getPortCount(model));
   clearPortSelection();
-  toast(`"${PRESETS[key].label}" appliqué sur ${count} port${count > 1 ? 's' : ''}`, 'ok');
+  toast(`"${p.label}" appliqué sur ${count} port${count > 1 ? 's' : ''}`, 'ok');
+  if (downgraded.length) {
+    toast(`48VH non supporté sur le(s) port(s) ${formatRanges(downgraded)} → 48V appliqué`, 'info');
+  }
 }
 
 function showPresetConfirmModal(key) {
@@ -450,8 +494,8 @@ function _buildVlanRows(portNum, pvid, tagged) {
       </div>
       <div class="detail-row">
         <span class="dl">VLANs taggés</span>
-        <input type="text" value="${tagged.join(',')}" placeholder="10,20,30" style="${s};width:120px"
-          onchange="updatePortField(${portNum},'tagged',this.value.split(',').map(v=>parseInt(v.trim())).filter(n=>n>0))" />
+        <input type="text" value="${formatRanges(tagged)}" placeholder="10,20,230-240" style="${s};width:140px"
+          onchange="updatePortField(${portNum},'tagged',parseRanges(this.value))" />
       </div>`;
   }
 
@@ -459,7 +503,7 @@ function _buildVlanRows(portNum, pvid, tagged) {
     `<option value="${v.id}" ${v.id === pvid ? 'selected' : ''}>${v.id} – ${v.name}</option>`
   ).join('');
 
-  const tagLabel = tagged.length ? tagged.join(', ') : '— aucun';
+  const tagLabel = tagged.length ? formatRanges(tagged) : '— aucun';
 
   return `
     <div class="detail-row" style="align-items:center">
@@ -538,7 +582,7 @@ function toggleTaggedVlan(portNum, vlanId, checked) {
   // Mettre à jour le label du bouton sans fermer le picker
   const btn = document.getElementById('tagged-btn-' + portNum);
   if (btn) btn.textContent = portRawConfigs[portNum].tagged.length
-    ? portRawConfigs[portNum].tagged.join(', ')
+    ? formatRanges(portRawConfigs[portNum].tagged)
     : '— aucun';
 }
 
@@ -551,8 +595,12 @@ function showPortDetail(key, ports) {
   const preset  = key && key !== 'unknown' ? PRESETS[key] : null;
   const raw     = portRawConfigs[portNum] || null;
   const link    = portLinkStats[portNum]  || null;
+  const swDetail = window.App && window.App.currentSw;
+  const vhOk     = portSupportsVH(swDetail ? swDetail.model : null, portNum);
 
-  const cfg     = preset || raw || {};
+  // Config réelle du port (raw) prioritaire pour les valeurs éditables ;
+  // le preset ne sert qu'au libellé/couleur ci-dessous.
+  const cfg     = raw || preset || {};
   const pvid    = cfg.pvid    !== undefined ? cfg.pvid    : 1;
   const tagged  = Array.isArray(cfg.tagged) ? cfg.tagged  : [];
   const poe     = cfg.poe     !== undefined ? cfg.poe     : false;
@@ -593,11 +641,11 @@ function showPortDetail(key, ports) {
 
     <div class="detail-row" style="align-items:center">
       <span class="dl">PoE</span>
-      <select style="${s};width:80px" onchange="updatePortField(${portNum},'poe',this.value==='false'?false:this.value)">
+      <select style="${s};width:110px" onchange="updatePortField(${portNum},'poe',this.value==='false'?false:this.value)">
         <option value="false" ${poeVal==='false'?'selected':''}>OFF</option>
         <option value="24v"   ${poeVal==='24v'?'selected':''}>24V</option>
         <option value="48v"   ${poeVal==='48v'?'selected':''}>48V</option>
-        <option value="48VH"  ${poeVal==='48VH'||poeVal==='48vHV'?'selected':''}>48VH</option>
+        <option value="48VH"  ${poeVal==='48VH'||poeVal==='48vHV'?'selected':''} ${vhOk?'':'disabled'} title="${vhOk?'':'Non supporté sur ce port'}">48VH${vhOk?'':' (non supporté)'}</option>
       </select>
     </div>
 
@@ -693,6 +741,17 @@ function updatePortField(portNum, field, value) {
   if (!portRawConfigs[portNum]) {
     portRawConfigs[portNum] = { enabled: true, poe: false, pvid: 1, tagged: [], stp: false, storm_control: false, qos: false, description: '' };
   }
+
+  // 48VH refusé sur un port non capable → 48V standard.
+  let vhDowngraded = false;
+  if (field === 'poe' && isVHPoe(value)) {
+    const sw = window.App && window.App.currentSw;
+    if (!portSupportsVH(sw ? sw.model : null, portNum)) {
+      value = '48v';
+      vhDowngraded = true;
+    }
+  }
+
   portRawConfigs[portNum][field] = value;
   if (field === 'description') portDescriptions[portNum] = value;
 
@@ -704,6 +763,11 @@ function updatePortField(portNum, field, value) {
 
   const sw = window.App && window.App.currentSw;
   renderPortGrid(getPortCount(sw ? sw.model : null));
+
+  if (vhDowngraded) {
+    toast(`Port ${portNum} ne supporte pas le 48VH → 48V appliqué`, 'info');
+    showPortDetail(portStates[portNum], [portNum]);  // rafraîchit le select PoE
+  }
 }
 
 function buildPortsPayload(count) {

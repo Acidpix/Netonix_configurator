@@ -374,7 +374,7 @@ async function pushConfig() {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
-    toast(d.message || 'Configuration appliquée !', 'ok');
+    toast(d.message || 'Configuration appliquée !', d.confirmed === false ? 'err' : 'ok');
   } catch (e) {
     toast('Erreur push : ' + e.message, 'err');
   } finally {
@@ -596,12 +596,30 @@ async function loadSettingsModels() {
       <td style="font-family:var(--mono)">${m.key}</td>
       <td>${m.label}</td>
       <td style="text-align:center">${m.port_count}</td>
+      <td>
+        <input type="text" value="${(m.poe_vh_ports || '').replace(/"/g, '&quot;')}"
+          placeholder="ex: 1-4,7" style="width:90px;font-family:var(--mono);font-size:11px;padding:2px 6px"
+          onchange="saveModelVh('${m.key}', this.value)" />
+      </td>
       <td style="text-align:center">
         ${m.builtin ? '<span style="color:var(--text3);font-size:10px">intégré</span>' :
         `<button class="btn btn-danger" style="font-size:10px;padding:2px 8px" onclick="deleteModel('${m.key}')">Supprimer</button>`}
       </td>
     </tr>
   `).join('');
+}
+
+async function saveModelVh(key, value) {
+  try {
+    const r = await fetch(`/api/models/${key}`, {
+      method : 'PUT', headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ poe_vh_ports: value }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    await initModels();   // recharge MODEL_VH côté ports
+    toast(`Ports 48VH de ${key} : ${formatRanges(parseRanges(value)) || 'aucun'}`, 'ok');
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 async function addModel() {
@@ -646,7 +664,7 @@ async function loadSettingsPresets() {
         ${p.label}
       </td>
       <td style="font-family:var(--mono);font-size:10px">VLAN ${p.pvid}</td>
-      <td style="font-family:var(--mono);font-size:10px">${Array.isArray(p.tagged) && p.tagged.length ? p.tagged.join(',') : '—'}</td>
+      <td style="font-family:var(--mono);font-size:10px">${Array.isArray(p.tagged) && p.tagged.length ? formatRanges(p.tagged) : '—'}</td>
       <td style="font-size:10px">${p.poe && p.poe !== false ? p.poe : 'OFF'}</td>
       <td style="text-align:center;display:flex;gap:4px">
         <button class="btn btn-ghost" style="font-size:10px;padding:2px 8px" onclick="openPresetModal('${p.key}')">Modifier</button>
@@ -673,7 +691,7 @@ async function openPresetModal(key) {
     document.getElementById('pm-key').disabled      = true;
     document.getElementById('pm-label').value       = p.label;
     document.getElementById('pm-pvid').value        = p.pvid;
-    document.getElementById('pm-tagged').value      = Array.isArray(p.tagged) ? p.tagged.join(',') : '';
+    document.getElementById('pm-tagged').value      = Array.isArray(p.tagged) ? formatRanges(p.tagged) : '';
     document.getElementById('pm-poe').value         = p.poe === false ? 'false' : (p.poe || 'false');
     document.getElementById('pm-sc').checked        = p.storm_control;
     document.getElementById('pm-stp').checked       = p.stp;
@@ -705,8 +723,7 @@ async function savePreset() {
   const key = _editPresetKey || document.getElementById('pm-key').value.trim();
   if (!key) return toast('Clé preset requise', 'err');
 
-  const taggedRaw = document.getElementById('pm-tagged').value.trim();
-  const tagged = taggedRaw ? taggedRaw.split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n)) : [];
+  const tagged = parseRanges(document.getElementById('pm-tagged').value);
 
   const data = {
     key,

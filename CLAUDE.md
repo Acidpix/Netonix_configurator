@@ -30,9 +30,10 @@ src/
   db.js            # Connexion SQLite + création tables + seed + migration JSON
   store.js         # CRUD SQLite — switches (id, name, ip, username, password, group, model, https, location, snmp_location)
   presetsStore.js  # CRUD SQLite — presets éditables (key, label, pvid, tagged, poe, ...)
-  modelsStore.js   # CRUD SQLite — modèles de switch (key, label, port_count, builtin)
+  modelsStore.js   # CRUD SQLite — modèles de switch (key, label, port_count, builtin, poe_vh_ports)
   netonix.js       # Client API Netonix — login / getConfig / pushConfig / resetConfig / ping / portStats / detectModel
   presets.js       # toPortConfig() (lit presetsStore) + detectPreset()
+  ranges.js        # parseRanges()/formatRanges() — plages "10,20,230-240" ↔ tableau (taggés, ports 48VH)
   routes/
     switches.js    # Routes /api/switches/* — inclut location/snmp_location, detectModel
     presets.js     # CRUD /api/presets
@@ -43,6 +44,7 @@ public/
   index.html       # Shell SPA — charge les JS dans l'ordre ci-dessous
   css/app.css      # Tous les styles (dark theme, CSS variables)
   js/
+    ranges.js      # parseRanges()/formatRanges() — miroir client de src/ranges.js (chargé en 1er)
     presets.js     # PRESETS{} + detectPreset() — miroir client de src/presets.js
     ui.js          # toast() / showTab() / setLoading() / setTopbar() / enableToolbar()
     ports.js       # portStates{} / selectedPorts / renderPortGrid() / applyPreset() / buildPortsPayload()
@@ -51,7 +53,7 @@ public/
 ```
 
 **Ordre de chargement JS obligatoire** (défini dans index.html) :
-`presets.js` → `ui.js` → `ports.js` → `vlans.js` → `app.js`
+`ranges.js` → `presets.js` → `ui.js` → `ports.js` → `vlans.js` → `app.js`
 
 ---
 
@@ -64,7 +66,8 @@ Documentée dans `src/netonix.js`. Endpoints utilisés :
 | POST | `/api/v1/login` | Auth → cookie `PHPSESSID` ou `session` |
 | GET | `/api/v1/config` | Config JSON complète |
 | POST | `/api/v1/config` | Sauvegarde (merge avec l'existante) |
-| POST | `/api/v1/apply` | Applique la config sauvegardée |
+| POST | `/api/v1/apply` | Applique la config sauvegardée (arme le revert timer) |
+| GET | `/api/v1/applystatus` | Poll post-apply = **confirmation anti-revert** — sans ce poll, le switch rétablit l'ancienne config après ~60 s |
 | GET | `/api/v1/portdetail?port=N` | Stats temps réel |
 
 Les certificats SSL auto-signés sont acceptés via `https.Agent({ rejectUnauthorized: false })`.
@@ -137,6 +140,8 @@ Définis dans `src/presets.js` (serveur) et `public/js/presets.js` (client, mêm
 - `detectPreset()` est une heuristique — elle peut se tromper sur des configs custom
 - Le `pushConfig()` backend fait un **merge** avec la config existante du switch pour ne pas écraser les champs non gérés (NTP, SNMP, etc.)
 - Le `resetConfig()` ne garde que `hostname / ip / netmask / gateway` — tout le reste est réécrit
+- **Confirmation anti-revert** : après `POST /api/v1/apply`, `confirmApply()` poll `GET /api/v1/applystatus` pour prouver au switch que le lien de management a survécu — sinon le firmware rétablit l'ancienne config après ~60 s. `pushConfig()`/`resetConfig()` renvoient `confirmed: bool`
+- **48VH par modèle** : `modelsStore.poe_vh_ports` (plages, ex. `1-4,7`) liste les ports capables ; `pushConfig()` rétrograde tout 48VH en 48V sur les ports non listés et renvoie `downgraded: [ports]`
 - `data/switches.json` est dans `.gitignore` — ne jamais le commiter (contient les credentials)
 
 ---

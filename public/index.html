@@ -252,9 +252,12 @@
       <!-- Tab Modèles -->
       <div id="settings-models">
         <table class="vlan-tbl" style="margin-bottom:16px">
-          <thead><tr><th>Clé</th><th>Label</th><th style="text-align:center">Ports</th><th></th></tr></thead>
+          <thead><tr><th>Clé</th><th>Label</th><th style="text-align:center">Ports</th><th>Ports 48VH</th><th></th></tr></thead>
           <tbody id="settings-models-tbody"></tbody>
         </table>
+        <div style="font-size:10px;color:var(--text3);margin:-8px 0 16px">
+          Ports 48VH : liste des ports supportant le 48V haute puissance (ex. <code>1-4,7</code>). Vide = aucun, le 48VH sera rétrogradé en 48V.
+        </div>
         <div style="display:grid;grid-template-columns:1fr 2fr 80px auto;gap:8px;align-items:end">
           <div class="field"><label>Clé</label><input id="nm-key" placeholder="WS-XX" /></div>
           <div class="field"><label>Label</label><input id="nm-label" placeholder="WS-XX (N ports)" /></div>
@@ -356,7 +359,7 @@
     </div>
     <div class="modal-row">
       <div class="field"><label>VLAN natif (PVID)</label><input id="pm-pvid" type="number" placeholder="1" /></div>
-      <div class="field"><label>VLANs taggés (virgules)</label><input id="pm-tagged" placeholder="10,20,30" /></div>
+      <div class="field"><label>VLANs taggés (plages ok)</label><input id="pm-tagged" placeholder="10,20,230-240" /></div>
     </div>
     <div class="modal-row">
       <div class="field">
@@ -413,6 +416,7 @@
 <div id="toast"></div>
 
 <!-- ── Scripts (ordre important : presets → ui → ports → vlans → vlanPresets → app) ── -->
+<script src="/js/ranges.js"></script>
 <script src="/js/presets.js"></script>
 <script src="/js/ui.js"></script>
 <script src="/js/ports.js"></script>
