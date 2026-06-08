@@ -425,12 +425,6 @@ function applyPreset(key) {
     toast(`Port ${locked.join(', ')} verrouillé (HS) — déverrouillez-le d'abord`, 'info');
     return;
   }
-  const hasCurrent = [...selectedPorts].some(p => portStates[p] !== null);
-  if (hasCurrent) {
-    _pendingPresetKey = key;
-    showPresetConfirmModal(key);
-    return;
-  }
   doApplyPreset(key);
 }
 
