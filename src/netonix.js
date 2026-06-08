@@ -90,24 +90,45 @@ function invalidateSession(ip) {
   delete _sessions[ip];
 }
 
+// Détecte une réponse de session expirée : soit 401, soit une page de login HTML
+// renvoyée avec un statut 200 (certains firmwares Netonix ne renvoient pas 401).
+function _looksLikeLoginHtml(text) {
+  if (!text) return false;
+  var t = text.trimStart().slice(0, 200).toLowerCase();
+  return t.charAt(0) === '<' || t.indexOf('<!doctype') !== -1 || t.indexOf('<html') !== -1;
+}
+
 async function get(sw, endpoint, auth) {
   if (!auth) auth = await getAuth(sw);
-  var res = await fetch(baseUrl(sw) + endpoint, {
-    headers : auth,
-    agent   : agent(sw),
-    timeout : SWITCH_TIMEOUT,
-  });
-  if (res.status === 401) {
-    invalidateSession(sw.ip);
-    auth = await getAuth(sw);
-    res  = await fetch(baseUrl(sw) + endpoint, {
-      headers : auth,
+
+  var doFetch = function (a) {
+    return fetch(baseUrl(sw) + endpoint, {
+      headers : a,
       agent   : agent(sw),
       timeout : SWITCH_TIMEOUT,
     });
+  };
+
+  var res  = await doFetch(auth);
+  var text = res.status === 401 ? '' : await res.text();
+
+  // Session invalide → relogin et un seul retry
+  if (res.status === 401 || _looksLikeLoginHtml(text)) {
+    invalidateSession(sw.ip);
+    auth = await getAuth(sw);
+    res  = await doFetch(auth);
+    text = await res.text();
   }
+
   if (!res.ok) throw new Error('GET ' + endpoint + ' → HTTP ' + res.status);
-  return { data: await res.json(), auth: auth };
+  if (_looksLikeLoginHtml(text)) {
+    throw new Error('GET ' + endpoint + ' → réponse HTML (authentification refusée par le switch)');
+  }
+  try {
+    return { data: JSON.parse(text), auth: auth };
+  } catch (e) {
+    throw new Error('GET ' + endpoint + ' → réponse non-JSON : ' + text.slice(0, 80));
+  }
 }
 
 async function post(sw, endpoint, body, auth) {
@@ -122,14 +143,21 @@ async function post(sw, endpoint, body, auth) {
       timeout : SWITCH_TIMEOUT,
     });
   };
-  var res = await makeReq(auth);
-  if (res.status === 401) {
+  var res  = await makeReq(auth);
+  var text = res.status === 401 ? '' : await res.text();
+
+  // Session invalide (401 ou page de login HTML en 200) → relogin et un seul retry
+  if (res.status === 401 || _looksLikeLoginHtml(text)) {
     invalidateSession(sw.ip);
     auth = await getAuth(sw);
     res  = await makeReq(auth);
+    text = await res.text();
   }
+
   if (!res.ok) throw new Error('POST ' + endpoint + ' → HTTP ' + res.status);
-  var text = await res.text();
+  if (_looksLikeLoginHtml(text)) {
+    throw new Error('POST ' + endpoint + ' → réponse HTML (authentification refusée par le switch)');
+  }
   try { return JSON.parse(text); } catch (e) { return { raw: text }; }
 }
 
