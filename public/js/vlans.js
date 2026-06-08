@@ -40,6 +40,16 @@ function removeVlan(idx) {
   renderVlanTable();
 }
 
+// Déplace le VLAN de l'index `from` à la position de l'index `to` (insertion avant la cible).
+function moveVlan(from, to) {
+  if (from == null || to == null || from === to) return;
+  const item = vlans.splice(from, 1)[0];
+  vlans.splice(from < to ? to - 1 : to, 0, item);
+  renderVlanTable();
+}
+
+let _vlanDragIdx = null;
+
 function renderVlanTable() {
   const tbody = document.getElementById('vlan-tbody');
   tbody.innerHTML = '';
@@ -49,6 +59,7 @@ function renderVlanTable() {
     tr.innerHTML = `
       <td>
         <div style="display:flex;align-items:center;gap:6px">
+          <span class="vlan-grip" draggable="true" title="Glisser pour réordonner">⠿</span>
           <div class="vlan-dot" style="background:${color}"></div>
           <input type="number" value="${v.id}" style="width:52px" onchange="vlans[${idx}].id=+this.value" />
         </div>
@@ -58,6 +69,34 @@ function renderVlanTable() {
       <td><input type="text" value="${v.desc||''}"   placeholder="Description"  onchange="vlans[${idx}].desc=this.value" /></td>
       <td><button class="btn btn-danger" style="padding:3px 7px;font-size:11px" onclick="removeVlan(${idx})">✕</button></td>
     `;
+
+    // Réordonnancement par glisser-déposer (poignée ⠿ uniquement, pour ne pas gêner les champs)
+    const grip = tr.querySelector('.vlan-grip');
+    grip.ondragstart = (e) => {
+      _vlanDragIdx = idx;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(idx)); } catch (_) {}
+      tr.classList.add('vlan-dragging');
+    };
+    grip.ondragend = () => {
+      _vlanDragIdx = null;
+      document.querySelectorAll('.vlan-dragging, .vlan-dragover')
+        .forEach(el => el.classList.remove('vlan-dragging', 'vlan-dragover'));
+    };
+    tr.ondragover = (e) => {
+      if (_vlanDragIdx === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tr.classList.add('vlan-dragover');
+    };
+    tr.ondragleave = () => tr.classList.remove('vlan-dragover');
+    tr.ondrop = (e) => {
+      e.preventDefault();
+      tr.classList.remove('vlan-dragover');
+      moveVlan(_vlanDragIdx, idx);
+      _vlanDragIdx = null;
+    };
+
     tbody.appendChild(tr);
   });
 }

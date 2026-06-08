@@ -838,6 +838,15 @@ async function loadSettingsVlanPresets() {
 
 let _vpmVlans = [];
 
+let _vpmDragIdx = null;
+
+function vpmMoveVlan(from, to) {
+  if (from == null || to == null || from === to) return;
+  const item = _vpmVlans.splice(from, 1)[0];
+  _vpmVlans.splice(from < to ? to - 1 : to, 0, item);
+  vpmRenderTable();
+}
+
 function vpmRenderTable() {
   const tbody = document.getElementById('vpm-vlan-tbody');
   tbody.innerHTML = '';
@@ -847,6 +856,7 @@ function vpmRenderTable() {
     tr.innerHTML = `
       <td>
         <div style="display:flex;align-items:center;gap:6px">
+          <span class="vlan-grip" draggable="true" title="Glisser pour réordonner">⠿</span>
           <div class="vlan-dot" style="background:${color}"></div>
           <input type="number" value="${v.id}" style="width:52px" onchange="_vpmVlans[${idx}].id=+this.value" />
         </div>
@@ -856,6 +866,33 @@ function vpmRenderTable() {
       <td><input type="text" value="${v.desc||''}"      placeholder="Description"  onchange="_vpmVlans[${idx}].desc=this.value" /></td>
       <td><button class="btn btn-danger" style="padding:3px 7px;font-size:11px" onclick="vpmRemoveVlan(${idx})">✕</button></td>
     `;
+
+    const grip = tr.querySelector('.vlan-grip');
+    grip.ondragstart = (e) => {
+      _vpmDragIdx = idx;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(idx)); } catch (_) {}
+      tr.classList.add('vlan-dragging');
+    };
+    grip.ondragend = () => {
+      _vpmDragIdx = null;
+      document.querySelectorAll('.vlan-dragging, .vlan-dragover')
+        .forEach(el => el.classList.remove('vlan-dragging', 'vlan-dragover'));
+    };
+    tr.ondragover = (e) => {
+      if (_vpmDragIdx === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tr.classList.add('vlan-dragover');
+    };
+    tr.ondragleave = () => tr.classList.remove('vlan-dragover');
+    tr.ondrop = (e) => {
+      e.preventDefault();
+      tr.classList.remove('vlan-dragover');
+      vpmMoveVlan(_vpmDragIdx, idx);
+      _vpmDragIdx = null;
+    };
+
     tbody.appendChild(tr);
   });
 }

@@ -217,6 +217,11 @@ select option { background: var(--bg3); }
 .vlan-tbl input, .vlan-tbl select { height: 28px; padding: 3px 8px; font-size: 11px; }
 .vlan-tbl tr:hover td { background: rgba(255,255,255,.02); }
 .vlan-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.vlan-grip { cursor: grab; color: var(--text3); user-select: none; font-size: 13px; line-height: 1; padding: 0 1px; flex-shrink: 0; }
+.vlan-grip:hover { color: var(--text); }
+.vlan-grip:active { cursor: grabbing; }
+.vlan-tbl tr.vlan-dragging td { opacity: .45; }
+.vlan-tbl tr.vlan-dragover td { box-shadow: inset 0 2px 0 0 var(--accent); }
 
 /* ── Detail panel ── */
 #detail-panel { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r2); padding: 12px; font-size: 12px; margin-top: 12px; display: none; }
