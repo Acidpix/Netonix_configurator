@@ -8,6 +8,9 @@
 </head>
 <body>
 
+<!-- Overlay du drawer (mobile) -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <!-- ── Sidebar ── -->
 <div id="sidebar">
   <div class="sidebar-header">
@@ -31,7 +34,8 @@
 
   <!-- Topbar -->
   <div id="topbar">
-    <div>
+    <button id="btn-menu" onclick="toggleSidebar()" title="Menu" aria-label="Menu">☰</button>
+    <div style="min-width:0">
       <div class="topbar-name" id="tb-name">Sélectionnez un switch</div>
       <div class="topbar-ip"   id="tb-ip">—</div>
     </div>

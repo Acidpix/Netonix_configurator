@@ -41,6 +41,14 @@ function applyStoredTheme() {
   }
 }
 
+// ── Drawer mobile (sidebar) ────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.body.classList.toggle('sidebar-open');
+}
+function closeSidebar() {
+  document.body.classList.remove('sidebar-open');
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function init() {
   applyStoredTheme();
@@ -53,6 +61,16 @@ async function init() {
   setInterval(function() {
     if (App.currentId && !App.configDirty) fetchConfig(true).catch(function() {});
   }, 60000);
+
+  // Re-render de la grille de ports au redimensionnement (rotation mobile, etc.)
+  let _resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function() {
+      const sw = App.currentSw;
+      if (sw && App.currentId) renderPortGrid(getPortCount(sw.model));
+    }, 200);
+  });
 }
 
 // ── Inventaire ────────────────────────────────────────────────────────────────
@@ -120,6 +138,7 @@ async function pingAll() {
 async function selectSwitch(id) {
   App.currentId = id;
   clearConfigDirty();   // nouveau switch → on repart d'une config propre
+  closeSidebar();       // referme le drawer sur mobile
   const sw = App.currentSw;
   if (!sw) return;
 

@@ -248,7 +248,10 @@ function renderPortGrid(count) {
   if (_portViewMode === 'table') return _renderPortTable(count);
 
   const grid = document.getElementById('port-grid');
-  const cols  = count <= 6 ? 6 : count <= 8 ? 4 : count <= 12 ? 6 : count <= 16 ? 8 : 9;
+  // Sur mobile, on limite à 4 colonnes pour garder des cellules lisibles/tactiles.
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  const cols  = isMobile ? Math.min(count, 4)
+              : count <= 6 ? 6 : count <= 8 ? 4 : count <= 12 ? 6 : count <= 16 ? 8 : 9;
   grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   grid.innerHTML = '';
 
