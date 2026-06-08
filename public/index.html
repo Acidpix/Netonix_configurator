@@ -36,6 +36,7 @@
       <div class="topbar-ip"   id="tb-ip">—</div>
     </div>
     <span class="topbar-badge" id="tb-status"></span>
+    <span id="dirty-indicator" style="display:none;font-size:11px;color:var(--amber);font-weight:600" title="Auto-refresh suspendu tant que les modifications ne sont pas poussées">● Modifications non sauvegardées</span>
     <div class="spacer"></div>
     <button class="btn btn-ghost"   id="btn-color-mode" onclick="togglePortColorMode()" disabled title="Changer le mode couleur des ports">Mode: Preset</button>
     <button class="btn btn-green"   id="btn-fetch"  onclick="fetchConfig()"   disabled>↓ Sync conf</button>

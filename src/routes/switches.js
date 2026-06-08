@@ -157,6 +157,24 @@ router.post('/:id/reboot', async (req, res) => {
   }
 });
 
+// GET /api/switches/:id/linkstatus — statut de lien temps réel de tous les ports
+var _linkStatusLogged = false;
+router.get('/:id/linkstatus', async (req, res) => {
+  const sw = store.findById(req.params.id);
+  if (!sw) return res.status(404).json({ error: 'Switch introuvable' });
+  try {
+    const { endpoint, data } = await nx.linkStatus(sw);
+    if (!_linkStatusLogged) {
+      console.log('[linkstatus] endpoint =', endpoint, '->', JSON.stringify(data));
+      _linkStatusLogged = true;
+    }
+    res.json({ endpoint, data });
+  } catch (e) {
+    console.error('[linkstatus]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/switches/:id/stats/:port — stats temps réel d'un port
 var _portStatsLogged = false;
 router.get('/:id/stats/:port', async (req, res) => {

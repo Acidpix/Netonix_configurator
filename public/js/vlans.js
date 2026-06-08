@@ -33,11 +33,13 @@ function resetVlans() {
 function addVlan() {
   vlans.push({ id: 100 + vlans.length, name: 'Nouveau', subnet: '10.0.x.0/24', desc: '' });
   renderVlanTable();
+  if (window.markConfigDirty) markConfigDirty();
 }
 
 function removeVlan(idx) {
   vlans.splice(idx, 1);
   renderVlanTable();
+  if (window.markConfigDirty) markConfigDirty();
 }
 
 // Déplace le VLAN de l'index `from` à la position de l'index `to` (insertion avant la cible).
@@ -46,6 +48,7 @@ function moveVlan(from, to) {
   const item = vlans.splice(from, 1)[0];
   vlans.splice(from < to ? to - 1 : to, 0, item);
   renderVlanTable();
+  if (window.markConfigDirty) markConfigDirty();
 }
 
 let _vlanDragIdx = null;
@@ -61,12 +64,12 @@ function renderVlanTable() {
         <div style="display:flex;align-items:center;gap:6px">
           <span class="vlan-grip" draggable="true" title="Glisser pour réordonner">⠿</span>
           <div class="vlan-dot" style="background:${color}"></div>
-          <input type="number" value="${v.id}" style="width:52px" onchange="vlans[${idx}].id=+this.value" />
+          <input type="number" value="${v.id}" style="width:52px" onchange="vlans[${idx}].id=+this.value;markConfigDirty()" />
         </div>
       </td>
-      <td><input type="text" value="${v.name}"   onchange="vlans[${idx}].name=this.value" /></td>
-      <td><input type="text" value="${v.subnet||''}" placeholder="10.0.x.0/24" onchange="vlans[${idx}].subnet=this.value" /></td>
-      <td><input type="text" value="${v.desc||''}"   placeholder="Description"  onchange="vlans[${idx}].desc=this.value" /></td>
+      <td><input type="text" value="${v.name}"   onchange="vlans[${idx}].name=this.value;markConfigDirty()" /></td>
+      <td><input type="text" value="${v.subnet||''}" placeholder="10.0.x.0/24" onchange="vlans[${idx}].subnet=this.value;markConfigDirty()" /></td>
+      <td><input type="text" value="${v.desc||''}"   placeholder="Description"  onchange="vlans[${idx}].desc=this.value;markConfigDirty()" /></td>
       <td><button class="btn btn-danger" style="padding:3px 7px;font-size:11px" onclick="removeVlan(${idx})">✕</button></td>
     `;
 

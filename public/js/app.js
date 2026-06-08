@@ -4,8 +4,26 @@
 window.App = {
   switches  : [],
   currentId : null,
+  configDirty: false,   // modifications locales non poussées → suspend l'auto-refresh
   get currentSw() { return this.switches.find(s => s.id === this.currentId) || null; },
 };
+
+// ── Suivi des modifications non sauvegardées ──────────────────────────────────
+// Tant que configDirty est vrai, l'auto-refresh ne réécrit pas l'état des ports/VLANs.
+function markConfigDirty() {
+  if (!App.configDirty) {
+    App.configDirty = true;
+    const ind = document.getElementById('dirty-indicator');
+    if (ind) ind.style.display = '';
+  }
+}
+
+function clearConfigDirty() {
+  App.configDirty = false;
+  const ind = document.getElementById('dirty-indicator');
+  if (ind) ind.style.display = 'none';
+}
+window.markConfigDirty = markConfigDirty;
 
 // ── Thème clair / sombre ──────────────────────────────────────────────────────
 function toggleTheme() {
@@ -30,9 +48,10 @@ async function init() {
   renderVlanPresetButtons();
   await loadSwitches();
   setInterval(pingAll, 30000);
-  // Auto-refresh des infos switch toutes les 60s si un switch est sélectionné
+  // Auto-refresh des infos switch toutes les 60s si un switch est sélectionné.
+  // Suspendu tant qu'il y a des modifications locales non poussées (configDirty).
   setInterval(function() {
-    if (App.currentId) fetchConfig(true).catch(function() {});
+    if (App.currentId && !App.configDirty) fetchConfig(true).catch(function() {});
   }, 60000);
 }
 
@@ -100,6 +119,7 @@ async function pingAll() {
 // ── Sélection d'un switch ─────────────────────────────────────────────────────
 async function selectSwitch(id) {
   App.currentId = id;
+  clearConfigDirty();   // nouveau switch → on repart d'une config propre
   const sw = App.currentSw;
   if (!sw) return;
 
@@ -135,6 +155,8 @@ async function selectSwitch(id) {
 // ── Fetch config depuis le switch ─────────────────────────────────────────────
 async function fetchConfig(silent = false) {
   if (!App.currentId) return;
+  // Refresh automatique (silencieux) : ne jamais écraser des modifications en cours.
+  if (silent && App.configDirty) return;
   setLoading('btn-fetch', true, '↓ Sync conf');
   try {
     const r = await fetch(`/api/switches/${App.currentId}/config`);
@@ -228,6 +250,7 @@ async function fetchConfig(silent = false) {
 
     renderPortGrid(pc);
     document.getElementById('raw-config').textContent = JSON.stringify(cfg, null, 2);
+    clearConfigDirty();   // l'état local reflète maintenant la config réelle du switch
     if (!silent) toast('Synchronisation effectuée', 'ok');
 
     // Chargement des stats de lien en arrière-plan (non bloquant)
@@ -311,51 +334,79 @@ async function saveSwInfo() {
 }
 
 // ── Stats de lien par port ────────────────────────────────────────────────
+
+// Parse une vitesse texte/num ("1G", "1000Mbps", 1000…) → Mbps
+function _parseSpeed(raw) {
+  const s = String(raw == null ? '' : raw).toLowerCase();
+  if (s.includes('1000') || s === '1g' || s === '1gbps') return 1000;
+  if (s.includes('100')  && !s.includes('1000'))         return 100;
+  if (s.includes('10')   && !s.includes('100'))          return 10;
+  return parseInt(s.replace(/[^\d]/g, '')) || 0;
+}
+
+// Interprète un champ "link" hétérogène (bool, "Up"/"Down", "connected"…) → true/false/null
+function _parseLinkUp(v) {
+  if (v === true)  return true;
+  if (v === false) return false;
+  const s = String(v == null ? '' : v).toLowerCase().trim();
+  if (s === 'up' || s === 'connected' || s === 'active' || s === '1' || s === 'true' || s === 'yes') return true;
+  if (s === 'down' || s === 'disconnected' || s === 'inactive' || s === '0' || s === 'false' || s === 'no' || s === '') return false;
+  return null;
+}
+
+// Extrait { up, speed } d'une entrée de port, quelle que soit la convention de nommage
+function _extractPortLink(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const up = _parseLinkUp(
+    entry.Link ?? entry.link ?? entry.LinkUp ?? entry.link_up ??
+    entry.Status ?? entry.status ?? entry.Up ?? entry.up ?? entry.Connected ?? entry.connected
+  );
+  if (up === null) return null;
+  const speed = _parseSpeed(
+    entry.Speed ?? entry.speed ?? entry.LinkSpeed ?? entry.link_speed ??
+    entry.Link_Speed ?? entry.Rate ?? entry.rate ?? ''
+  );
+  return { up, speed };
+}
+
 async function loadPortLinkStats(switchId, portCount) {
-  // L'API portdetail ne retourne que des compteurs de trafic (pas le statut du lien).
-  // On utilise les compteurs comme indicateur d'activité : si > 0, le port a eu du trafic.
-  const BATCH = 4;
-  const sw    = App.currentSw;
-  for (let i = 1; i <= portCount; i += BATCH) {
+  // On interroge l'endpoint de statut temps réel (découvert par le backend).
+  // Les compteurs de trafic NE sont PAS utilisés : ils sont cumulatifs et donnent
+  // de faux "lien actif" sur des ports débranchés ayant déjà eu du trafic.
+  try {
+    const r = await fetch(`/api/switches/${switchId}/linkstatus`);
+    if (!r.ok) return;
+    const { endpoint, data } = await r.json();
     if (App.currentId !== switchId) return;
-    const batch = [];
-    for (let j = i; j < i + BATCH && j <= portCount; j++) batch.push(j);
-    await Promise.all(batch.map(async portNum => {
-      try {
-        const r = await fetch(`/api/switches/${switchId}/stats/${portNum}`);
-        if (!r.ok) return;
-        const d = await r.json(); // déjà unwrappé de PortDetail côté backend
+    if (!data) { console.warn('[linkstatus] aucun endpoint de statut trouvé sur le switch'); return; }
 
-        // Si la réponse contient quand même des champs de lien explicites
-        const linkStr = String(d.Link ?? d.link ?? d.Status ?? d.status ?? '').toLowerCase();
-        if (linkStr === 'up' || linkStr === 'connected' || linkStr === 'active') {
-          const sr = String(d.Speed ?? d.speed ?? '').toLowerCase();
-          const speed = sr.includes('1000') || sr === '1g' ? 1000
-                      : sr.includes('100')  ? 100
-                      : sr.includes('10')   ? 10
-                      : parseInt(sr) || 0;
-          portLinkStats[portNum] = { up: true, speed };
-          return;
-        }
-        if (linkStr === 'down' || linkStr === 'disconnected') {
-          portLinkStats[portNum] = { up: false, speed: 0 };
-          return;
-        }
+    console.log('[linkstatus] endpoint =', endpoint, data);
 
-        // Pas de champ lien explicite : inférer depuis les compteurs de trafic
-        const rxBytes  = (d.ifInOctets  || 0) + (d.rx_etherStatsOctets  || 0);
-        const txBytes  = (d.ifOutOctets || 0) + (d.tx_etherStatsOctets || 0);
-        const rxPkts   = (d.ifInUcastPkts  || 0) + (d.rx_etherStatsPkts  || 0);
-        const txPkts   = (d.ifOutUcastPkts || 0) + (d.tx_etherStatsPkts || 0);
-        if (rxBytes + txBytes + rxPkts + txPkts > 0) {
-          portLinkStats[portNum] = { up: true, speed: 0 };
-        }
-        // Sinon : pas de mise à jour (badge absent = statut inconnu)
-      } catch (e) {
-        console.warn('[portStats] port', portNum, e.message);
-      }
-    }));
-    if (App.currentId === switchId && sw) renderPortGrid(portCount);
+    // Localise le tableau de ports dans la réponse (conventions variables)
+    let ports = Array.isArray(data) ? data
+              : data.Ports || data.ports || data.PortStatus || data.port_status
+              || data.Port || data.port || null;
+
+    if (Array.isArray(ports)) {
+      ports.forEach((entry, idx) => {
+        const num = parseInt(entry.Number ?? entry.number ?? entry.Port ?? entry.port ?? entry.Index ?? (idx + 1));
+        if (!num || num > portCount) return;
+        const link = _extractPortLink(entry);
+        if (link) portLinkStats[num] = link;
+      });
+    } else if (ports && typeof ports === 'object') {
+      // Map { "1": {...}, "2": {...} }
+      Object.keys(ports).forEach(k => {
+        const num = parseInt(k);
+        if (!num || num > portCount) return;
+        const link = _extractPortLink(ports[k]);
+        if (link) portLinkStats[num] = link;
+      });
+    }
+
+    renderPortGrid(portCount);
+  } catch (e) {
+    console.warn('[linkstatus]', e.message);
   }
 }
 
@@ -374,6 +425,7 @@ async function pushConfig() {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
+    clearConfigDirty();   // modifications poussées avec succès
     toast(d.message || 'Configuration appliquée !', d.confirmed === false ? 'err' : 'ok');
   } catch (e) {
     toast('Erreur push : ' + e.message, 'err');

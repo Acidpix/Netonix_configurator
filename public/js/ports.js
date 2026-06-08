@@ -459,6 +459,7 @@ function doApplyPreset(key) {
 
   renderPortGrid(getPortCount(model));
   clearPortSelection();
+  if (window.markConfigDirty) markConfigDirty();
   toast(`"${p.label}" appliqué sur ${count} port${count > 1 ? 's' : ''}`, 'ok');
   if (downgraded.length) {
     toast(`PoE non supporté sur le(s) port(s) ${formatRanges(downgraded)} → rétrogradé`, 'info');
@@ -799,6 +800,7 @@ function updatePortField(portNum, field, value) {
   }
 
   portRawConfigs[portNum][field] = value;
+  if (window.markConfigDirty) markConfigDirty();
   if (field === 'description') {
     portDescriptions[portNum] = value;
     // L'utilisateur tape "HS" sur un port en cours d'édition : on le garde déverrouillé
