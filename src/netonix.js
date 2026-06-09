@@ -90,45 +90,24 @@ function invalidateSession(ip) {
   delete _sessions[ip];
 }
 
-// Détecte une réponse de session expirée : soit 401, soit une page de login HTML
-// renvoyée avec un statut 200 (certains firmwares Netonix ne renvoient pas 401).
-function _looksLikeLoginHtml(text) {
-  if (!text) return false;
-  var t = text.trimStart().slice(0, 200).toLowerCase();
-  return t.charAt(0) === '<' || t.indexOf('<!doctype') !== -1 || t.indexOf('<html') !== -1;
-}
-
 async function get(sw, endpoint, auth) {
   if (!auth) auth = await getAuth(sw);
-
-  var doFetch = function (a) {
-    return fetch(baseUrl(sw) + endpoint, {
-      headers : a,
+  var res = await fetch(baseUrl(sw) + endpoint, {
+    headers : auth,
+    agent   : agent(sw),
+    timeout : SWITCH_TIMEOUT,
+  });
+  if (res.status === 401) {
+    invalidateSession(sw.ip);
+    auth = await getAuth(sw);
+    res  = await fetch(baseUrl(sw) + endpoint, {
+      headers : auth,
       agent   : agent(sw),
       timeout : SWITCH_TIMEOUT,
     });
-  };
-
-  var res  = await doFetch(auth);
-  var text = res.status === 401 ? '' : await res.text();
-
-  // Session invalide → relogin et un seul retry
-  if (res.status === 401 || _looksLikeLoginHtml(text)) {
-    invalidateSession(sw.ip);
-    auth = await getAuth(sw);
-    res  = await doFetch(auth);
-    text = await res.text();
   }
-
   if (!res.ok) throw new Error('GET ' + endpoint + ' → HTTP ' + res.status);
-  if (_looksLikeLoginHtml(text)) {
-    throw new Error('GET ' + endpoint + ' → réponse HTML (authentification refusée par le switch)');
-  }
-  try {
-    return { data: JSON.parse(text), auth: auth };
-  } catch (e) {
-    throw new Error('GET ' + endpoint + ' → réponse non-JSON : ' + text.slice(0, 80));
-  }
+  return { data: await res.json(), auth: auth };
 }
 
 async function post(sw, endpoint, body, auth) {
@@ -143,69 +122,20 @@ async function post(sw, endpoint, body, auth) {
       timeout : SWITCH_TIMEOUT,
     });
   };
-  var res  = await makeReq(auth);
-  var text = res.status === 401 ? '' : await res.text();
-
-  // Session invalide (401 ou page de login HTML en 200) → relogin et un seul retry
-  if (res.status === 401 || _looksLikeLoginHtml(text)) {
+  var res = await makeReq(auth);
+  if (res.status === 401) {
     invalidateSession(sw.ip);
     auth = await getAuth(sw);
     res  = await makeReq(auth);
-    text = await res.text();
   }
-
   if (!res.ok) throw new Error('POST ' + endpoint + ' → HTTP ' + res.status);
-  if (_looksLikeLoginHtml(text)) {
-    throw new Error('POST ' + endpoint + ' → réponse HTML (authentification refusée par le switch)');
-  }
+  var text = await res.text();
   try { return JSON.parse(text); } catch (e) { return { raw: text }; }
 }
 
 async function getConfig(sw) {
   var result = await get(sw, '/api/v1/config');
   return { config: result.data, auth: result.auth };
-}
-
-function _delay(ms) {
-  return new Promise(function (r) { setTimeout(r, ms); });
-}
-
-// Détecte si l'apply Netonix est terminé d'après la réponse de /api/v1/applystatus.
-// Format observé : { result: "OK", reverted: false }. On reste tolérant aux variantes.
-function _isApplyDone(s) {
-  if (!s || typeof s !== 'object') return false;
-  var result = String(s.result || s.Result || s.Status || s.status || s.State || s.state || '').toLowerCase();
-  if (result && /(ok|done|complete|applied|success|idle|finish|ready)/.test(result)) return true;
-  if (s.Applying === false || s.applying === false) return true;
-  if (s.Done === true || s.done === true || s.Finished === true || s.finished === true) return true;
-  if (typeof s.Progress === 'number' && s.Progress >= 100) return true;
-  if (typeof s.progress === 'number' && s.progress >= 100) return true;
-  return false;
-}
-
-// Confirme l'application : le firmware Netonix arme un "revert timer" à l'apply et
-// annule le rollback dès que le client revient prouver que le lien de management a
-// survécu, en interrogeant /api/v1/applystatus (comme le fait l'UI web). Sans ce
-// poll, la config est rétablie après ~1 min.
-// Renvoie true si l'apply est confirmé, false si le switch a rétabli l'ancienne config.
-async function confirmApply(sw, auth) {
-  var confirmed = false;
-  for (var i = 0; i < 20; i++) {
-    await _delay(700);
-    try {
-      var r = await get(sw, '/api/v1/applystatus?_=' + Date.now(), auth);
-      auth = r.auth;
-      var s = r.data || {};
-      if (s.reverted === true) { confirmed = false; break; }  // le switch a rollback
-      confirmed = true;                                        // client revenu → connectivité prouvée
-      if (_isApplyDone(s)) break;                              // apply terminé → on arrête de poller
-    } catch (e) {
-      // Le lien de management peut blipper pendant l'apply — on réessaie avec une session fraîche.
-      invalidateSession(sw.ip);
-      try { auth = await getAuth(sw); } catch (_) {}
-    }
-  }
-  return confirmed;
 }
 
 function toNativePoe(poe) {
@@ -292,6 +222,14 @@ async function pushConfig(sw, patch) {
     if (cfg.stp !== undefined)                                      portObj.STP    = !!cfg.stp;
   });
 
+  // ── Trunk global : champ AllowedVLANs par port ──────────────────────────────
+  // "1-4096" = port trunk (tous les VLANs autorisés) ; "" = non trunk.
+  // Non touché si patch.allPortsTrunk est indéfini.
+  if (patch.allPortsTrunk !== undefined) {
+    var allowedVal = patch.allPortsTrunk ? '1-4096' : '';
+    nativePorts.forEach(function (p) { p.AllowedVLANs = allowedVal; });
+  }
+
   var portVlanMap = {};
   Object.keys(patchPorts).forEach(function(numStr) {
     var portNum = parseInt(numStr);
@@ -299,49 +237,52 @@ async function pushConfig(sw, patch) {
     portVlanMap[portNum] = { pvid: cfg.pvid || 1, tagged: cfg.tagged || [] };
   });
 
+  // ── VLANs : on ne conserve QUE ceux de la config poussée ────────────────────
+  // Les VLANs présents sur le switch mais absents du patch sont supprimés.
+  // Les VLANs conservés réutilisent leur objet natif (préserve IPv4, IGMP, etc.).
   var patchVlans = patch.vlans || [];
-  patchVlans.forEach(function(pv) {
-    var pvId = parseInt(pv.id || pv.ID);
-    if (!pvId) return;
-    var exists = nativeVlans.some(function(v) { return parseInt(v.ID) === pvId; });
-    if (!exists) {
-      nativeVlans.push({
-        ID: String(pvId), Name: pv.name || pv.Name || ('VLAN ' + pvId),
-        Enable: true, PortSettings: new Array(portCount + 1).join('N'),
+  var newVlans;
+  if (patchVlans.length === 0) {
+    newVlans = nativeVlans;   // sécurité : table vide → on ne supprime aucun VLAN
+  } else {
+    newVlans = patchVlans.map(function (pv) {
+      var pvId = parseInt(pv.id || pv.ID);
+      if (!pvId) return null;
+      var existing = nativeVlans.find(function (v) { return parseInt(v.ID) === pvId; });
+      var vlan = existing || {
+        ID: String(pvId), Enable: true,
+        PortSettings: new Array(portCount + 1).join('E'),
         IPv4_Enable: false, IPv4_Address: '', IPv4_Netmask: '',
         IPv6_Enable: false, IPv6_Address: '', IGMP_Querier: false,
-      });
-    } else {
-      nativeVlans.forEach(function(v) {
-        if (parseInt(v.ID) === pvId && (pv.name || pv.Name)) v.Name = pv.name || pv.Name;
-      });
-    }
-  });
+      };
+      if (pv.name || pv.Name) vlan.Name = pv.name || pv.Name;
+      if (!vlan.Name) vlan.Name = 'VLAN ' + pvId;
+      return vlan;
+    }).filter(Boolean);
+  }
 
-  nativeVlans.forEach(function(vlan) {
+  // ── PortSettings : U = natif (PVID), T = tagged, E = exclu ───────────────────
+  newVlans.forEach(function(vlan) {
     var vlanId   = parseInt(vlan.ID);
     var settings = (vlan.PortSettings || '').split('');
-    while (settings.length < portCount) settings.push('N');
-    Object.keys(portVlanMap).forEach(function(numStr) {
-      var portNum = parseInt(numStr);
-      var idx     = portNum - 1;
-      if (idx < 0 || idx >= settings.length) return;
-      var vm = portVlanMap[portNum];
-      if (vm.pvid === vlanId)                  settings[idx] = 'U';
+    while (settings.length < portCount) settings.push('E');
+    for (var idx = 0; idx < settings.length; idx++) {
+      var vm = portVlanMap[idx + 1];
+      if (!vm) continue;   // port non géré par le patch → état existant conservé
+      if (vm.pvid === vlanId)                    settings[idx] = 'U';
       else if (vm.tagged.indexOf(vlanId) !== -1) settings[idx] = 'T';
-      else                                     settings[idx] = 'N';
-    });
+      else                                       settings[idx] = 'E';
+    }
     vlan.PortSettings = settings.join('');
   });
 
-  var merged = Object.assign({}, config, { Ports: nativePorts, VLANs: nativeVlans });
+  var merged = Object.assign({}, config, { Ports: nativePorts, VLANs: newVlans });
   Object.keys(patch).forEach(function(k) {
-    if (k !== 'ports' && k !== 'vlans') merged[k] = patch[k];
+    if (k !== 'ports' && k !== 'vlans' && k !== 'allPortsTrunk') merged[k] = patch[k];
   });
   await post(sw, '/api/v1/config', merged, auth);
   await post(sw, '/api/v1/apply', {}, auth);
-  var confirmed = await confirmApply(sw, auth);
-  return { downgraded: downgraded, confirmed: confirmed };
+  return { downgraded: downgraded };
 }
 
 async function resetConfig(sw, options) {
@@ -359,8 +300,7 @@ async function resetConfig(sw, options) {
   };
   await post(sw, '/api/v1/config', newConfig, auth);
   await post(sw, '/api/v1/apply', {}, auth);
-  var confirmed = await confirmApply(sw, auth);
-  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address, confirmed: confirmed };
+  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address };
 }
 
 function ping(sw) {

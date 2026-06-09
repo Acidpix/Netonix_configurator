@@ -188,7 +188,7 @@ async function fetchConfig(silent = false) {
     // ── Format natif Netonix ──────────────────────────────────────────────────
     // Ports  : cfg.Ports  = tableau [{ Number, Name, Enable, PoE, STP, ... }]
     // VLANs  : cfg.VLANs  = tableau [{ ID, Name, PortSettings: "TTTUU..." }]
-    //   PortSettings[i] : 'U'=untagged (PVID), 'T'=tagged, autre=absent
+    //   PortSettings[i] : 'U'=untagged (PVID), 'T'=tagged, 'E'=exclu (autre=absent)
 
     const portsArray = cfg.Ports  || cfg.ports  || [];
     const vlansArray = cfg.VLANs  || cfg.vlans  || [];
@@ -257,6 +257,13 @@ async function fetchConfig(silent = false) {
           portLinkStats[portNum] = { up: lu, speed: sp };
         }
       });
+
+      // Détecte l'état trunk global : tous les ports ont AllowedVLANs non vide
+      var trunkPorts = portsArray.filter(function(p) {
+        var av = p.AllowedVLANs || p.allowedVlans || p.Allowed_VLANs || '';
+        return String(av).trim() !== '';
+      });
+      setAllPortsTrunk(trunkPorts.length === portsArray.length && portsArray.length > 0);
     }
 
     // Détection automatique du modèle
@@ -436,7 +443,11 @@ async function pushConfig() {
   try {
     const sw   = App.currentSw;
     const pc   = getPortCount(sw.model);
-    const body = { vlans: buildVlansPayload(), ports: buildPortsPayload(pc) };
+    const body = {
+      vlans        : buildVlansPayload(),
+      ports        : buildPortsPayload(pc),
+      allPortsTrunk: getAllPortsTrunk(),
+    };
     const r    = await fetch(`/api/switches/${App.currentId}/config`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -445,7 +456,7 @@ async function pushConfig() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     clearConfigDirty();   // modifications poussées avec succès
-    toast(d.message || 'Configuration appliquée !', d.confirmed === false ? 'err' : 'ok');
+    toast(d.message || 'Configuration appliquée !', 'ok');
   } catch (e) {
     toast('Erreur push : ' + e.message, 'err');
   } finally {

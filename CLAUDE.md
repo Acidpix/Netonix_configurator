@@ -138,9 +138,11 @@ Définis dans `src/presets.js` (serveur) et `public/js/presets.js` (client, mêm
 
 - **node-fetch v2** (CommonJS) — ne pas upgrader en v3 (ESM only)
 - `detectPreset()` est une heuristique — elle peut se tromper sur des configs custom
-- Le `pushConfig()` backend fait un **merge** avec la config existante du switch pour ne pas écraser les champs non gérés (NTP, SNMP, etc.)
+- Le `pushConfig()` backend fait un **merge** avec la config existante du switch pour les champs non gérés (NTP, SNMP, etc.) et les propriétés des VLANs conservés (IPv4, IGMP…), **mais les VLANs absents de la config poussée sont supprimés** (on ne garde que ceux de `patch.vlans`)
 - Le `resetConfig()` ne garde que `hostname / ip / netmask / gateway` — tout le reste est réécrit
-- **Confirmation anti-revert** : après `POST /api/v1/apply`, `confirmApply()` poll `GET /api/v1/applystatus` pour prouver au switch que le lien de management a survécu — sinon le firmware rétablit l'ancienne config après ~60 s. `pushConfig()`/`resetConfig()` renvoient `confirmed: bool`
+- **PortSettings VLAN** (chaîne 1 char/port) : `U`=untagged (PVID), `T`=tagged, `E`=exclu. Un port décoché dans l'UI est poussé en `E` (Excluded)
+- **Trunk global** : la case « Tous les ports en trunk » (onglet VLANs) envoie `allPortsTrunk: bool` ; `pushConfig()` met `AllowedVLANs = "1-4096"` (trunk) ou `""` (non trunk) sur tous les ports. Détecté au chargement depuis `AllowedVLANs` des ports
+- **Session** : cache simple par IP (`getAuth`/`_sessions`), un seul login concurrent (déduplication Promise), retry unique sur `401`. Pas de TTL, pas de détection de page de login HTML, pas de poll anti-revert
 - **PoE par type, par modèle** : `modelsStore.poe_24v_ports` / `poe_48v_ports` / `poe_vh_ports` (plages, ex. `1-4,7`) listent les ports capables de chaque type. `resolvePoeForPort()` (client + serveur) rétrograde un type non supporté vers le type inférieur supporté, sinon Off ; `pushConfig()` renvoie `downgraded: [ports]`. 24V/48V défaut = tous les ports ; 48VH défaut = aucun
 - **Verrou ports HS** : un port dont le nom (description) vaut exactement `HS` est verrouillé côté client (`isPortLocked()` dans ports.js) — preset/drag-drop/édition bloqués et exclus de `buildPortsPayload()` (jamais poussé) tant qu'on n'a pas cliqué « Déverrouiller » (`unlockedPorts`, réinitialisé au changement de switch). Sélection de port = simple (un seul à la fois)
 - `data/switches.json` est dans `.gitignore` — ne jamais le commiter (contient les credentials)

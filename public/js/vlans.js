@@ -107,3 +107,18 @@ function renderVlanTable() {
 function buildVlansPayload() {
   return vlans.map(v => ({ id: v.id, name: v.name, description: v.desc || v.name }));
 }
+
+// ── Mode trunk global (case « Tous les ports en trunk ») ──────────────────────
+function getAllPortsTrunk() {
+  const el = document.getElementById('vlan-all-trunk');
+  return !!(el && el.checked);
+}
+
+function setAllPortsTrunk(on) {
+  const el = document.getElementById('vlan-all-trunk');
+  if (el) el.checked = !!on;
+}
+
+function onAllPortsTrunkChange() {
+  if (window.markConfigDirty) markConfigDirty();
+}

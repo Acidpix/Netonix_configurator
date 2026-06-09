@@ -151,6 +151,15 @@
         </div>
       </div>
       <div class="card">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:4px">
+          <input type="checkbox" id="vlan-all-trunk" style="width:auto" onchange="onAllPortsTrunkChange()" />
+          <div>
+            <div style="font-weight:600;font-size:13px">Tous les ports en trunk</div>
+            <div style="font-size:11px;color:var(--text3)">Définit <code>AllowedVLANs = 1-4096</code> sur tous les ports au prochain push (sinon vide = non trunk)</div>
+          </div>
+        </label>
+      </div>
+      <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="card-title" style="margin:0">Table des VLANs</div>
           <button class="btn btn-ghost" onclick="addVlan()" style="font-size:11px">＋ Ajouter</button>
