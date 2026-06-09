@@ -160,6 +160,12 @@ function getPortCount(model) {
   return MODEL_PORTS[model] || 12;
 }
 
+// WS-8 / WS-10 / WS-12 : ports disposés comme sur le switch physique
+// (impairs en haut, pairs en bas, sur 2 rangées).
+function isPhysicalLayout(model) {
+  return /^WS-?(8|10|12)\b/i.test(String(model || ''));
+}
+
 // ── Rendu tableau ──────────────────────────────────────────────────────────────
 
 function _renderPortTable(count) {
@@ -247,15 +253,30 @@ function _renderPortTable(count) {
 function renderPortGrid(count) {
   if (_portViewMode === 'table') return _renderPortTable(count);
 
-  const grid = document.getElementById('port-grid');
-  // Sur mobile, on limite à 4 colonnes pour garder des cellules lisibles/tactiles.
+  const grid     = document.getElementById('port-grid');
+  const sw       = window.App && window.App.currentSw;
+  const model    = sw ? sw.model : null;
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
-  const cols  = isMobile ? Math.min(count, 4)
-              : count <= 6 ? 6 : count <= 8 ? 4 : count <= 12 ? 6 : count <= 16 ? 8 : 9;
-  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+  // Disposition physique (WS-8/10/12) : impairs en haut, pairs en bas.
+  // minmax(...) → colonnes pleine largeur sur desktop, défilables sur mobile.
+  let order;
+  if (isPhysicalLayout(model)) {
+    const pairs = Math.ceil(count / 2);
+    grid.style.gridTemplateColumns = `repeat(${pairs}, minmax(${isMobile ? 58 : 48}px, 1fr))`;
+    const odd = [], even = [];
+    for (let n = 1; n <= count; n++) (n % 2 ? odd : even).push(n);
+    order = odd.concat(even);
+  } else {
+    const cols = isMobile ? Math.min(count, 4)
+               : count <= 6 ? 6 : count <= 8 ? 4 : count <= 12 ? 6 : count <= 16 ? 8 : 9;
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    order = [];
+    for (let n = 1; n <= count; n++) order.push(n);
+  }
   grid.innerHTML = '';
 
-  for (let i = 1; i <= count; i++) {
+  for (const i of order) {
     const key  = portStates[i];
     const p    = key && key !== 'unknown' ? PRESETS[key] : null;
     const raw  = portRawConfigs[i] || null;

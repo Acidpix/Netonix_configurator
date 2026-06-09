@@ -104,10 +104,10 @@
           </div>
         </div>
 
-        <!-- Card état système (températures, tensions, ventilo…) -->
-        <div class="card" id="sw-health-card" style="margin-bottom:16px;display:none">
-          <div class="card-title" style="margin:0 0 14px">État système</div>
-          <div id="health-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px"></div>
+        <!-- État système (badges compacts : températures, tensions, ventilo…) -->
+        <div id="sw-health-card" style="margin-bottom:14px;display:none;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">État</span>
+          <div id="health-grid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
 
         <!-- Grille de ports (pleine largeur) -->

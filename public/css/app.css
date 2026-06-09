@@ -70,6 +70,11 @@ body::before {
 .sw-dot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
 .sw-dot.offline { background: var(--red); }
 .sw-dot.pending { background: var(--amber); animation: blink 1s infinite; }
+/* Badge « numéro » du switch (préfixe du nom), coloré selon le statut */
+.sw-badge { flex-shrink: 0; min-width: 40px; padding: 4px 6px; border-radius: 5px; font-family: var(--mono); font-size: 10px; font-weight: 700; text-align: center; color: #fff; background: var(--text3); transition: background .3s; }
+.sw-badge.online  { background: var(--green); }
+.sw-badge.offline { background: var(--red); }
+.sw-badge.pending { background: var(--amber); animation: blink 1s infinite; }
 @keyframes blink { 0%,100%{opacity:1}50%{opacity:.3} }
 .sw-name { font-size: 12px; font-weight: 500; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sw-ip  { font-size: 10px; color: var(--text3); font-family: var(--mono); }
@@ -315,11 +320,14 @@ select option { background: var(--bg3); }
   .preset-btn  { padding: 14px 10px; font-size: 13px; }
 
   /* Tableau de ports : défilement horizontal */
-  #port-grid { overflow-x: auto; }
+  #port-grid { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
   .port-table { min-width: 520px; }
 
-  /* Cellules de port plus grandes au toucher */
-  .port-cell { padding: 10px 6px; }
+  /* Cellules de port plus grandes et plus lisibles au toucher */
+  .port-cell  { padding: 10px 5px; gap: 4px; min-height: 60px; justify-content: center; }
+  .port-num   { font-size: 13px; }
+  .port-label { font-size: 10px; }
+  .port-badge { font-size: 9px; padding: 2px 5px; }
 
   /* Modals : quasi plein écran, alignées en haut */
   .modal-bg { align-items: flex-start; padding: 12px; overflow-y: auto; }

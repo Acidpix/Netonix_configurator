@@ -91,6 +91,12 @@ async function loadSwitches() {
   }
 }
 
+// Extrait le « numéro » du switch = premier mot du nom (ex « SN-20 Salle » → « SN-20 »).
+function swPrefix(name) {
+  const first = String(name || '').trim().split(/\s+/)[0] || '?';
+  return first.length > 8 ? first.slice(0, 8) : first;
+}
+
 function renderSidebar() {
   const groups = {};
   App.switches.forEach(sw => {
@@ -115,12 +121,16 @@ function renderSidebar() {
       item.className = 'sw-item' + (sw.id === App.currentId ? ' active' : '');
       item.id = `sw-item-${sw.id}`;
       item.onclick = () => selectSwitch(sw.id);
+      const stClass = sw._online === true ? 'online' : sw._online === false ? 'offline' : 'pending';
+      // Badge = préfixe du nom (ex « SN-20 »), coloré selon le statut.
+      // Ligne principale = localisation ; ligne secondaire = nom complet.
+      const primary   = sw.location || sw.name;
+      const secondary = sw.location ? sw.name : sw.ip;
       item.innerHTML = `
-        <div class="sw-dot ${sw._online === true ? 'online' : sw._online === false ? 'offline' : 'pending'}" id="dot-${sw.id}"></div>
+        <div class="sw-badge ${stClass}" id="dot-${sw.id}">${swPrefix(sw.name)}</div>
         <div style="flex:1;overflow:hidden">
-          <div class="sw-name">${sw.name}</div>
-          <div class="sw-ip">${sw.ip}</div>
-          ${sw.location ? `<div class="sw-loc">${sw.location}</div>` : ''}
+          <div class="sw-name">${primary}</div>
+          <div class="sw-loc">${secondary}</div>
         </div>
       `;
       list.appendChild(item);
@@ -135,7 +145,7 @@ async function pingAll() {
       const d = await r.json();
       sw._online = d.online;
       const dot = document.getElementById(`dot-${sw.id}`);
-      if (dot) dot.className = `sw-dot ${d.online ? 'online' : 'offline'}`;
+      if (dot) dot.className = `sw-badge ${d.online ? 'online' : 'offline'}`;
       if (sw.id === App.currentId) setTopbar(sw, sw._online);
     } catch {}
   }
@@ -418,11 +428,8 @@ function _tempColor(t) {
   return 'var(--green)';
 }
 
-function _healthTile(label, value, color) {
-  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px">
-    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${label}</div>
-    <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:${color || 'var(--text)'}">${value}</div>
-  </div>`;
+function _healthBadge(text, color) {
+  return `<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);font-size:11px;font-family:var(--mono);font-weight:600;color:${color || 'var(--text2)'}">${text}</span>`;
 }
 
 function renderSystemStatus(data) {
@@ -430,41 +437,41 @@ function renderSystemStatus(data) {
   const grid = document.getElementById('health-grid');
   if (!card || !grid || !data) return;
 
-  const tiles = [];
+  const b = [];
 
-  // Températures (°C)
-  if (data.Board_Temp != null && data.Board_Temp !== '') tiles.push(_healthTile('Temp. carte', data.Board_Temp + ' °C', _tempColor(data.Board_Temp)));
-  if (data.CPU_Temp   != null && data.CPU_Temp   !== '') tiles.push(_healthTile('Temp. CPU',   data.CPU_Temp   + ' °C', _tempColor(data.CPU_Temp)));
-  if (data.PHY_Temp   != null && data.PHY_Temp   !== '') tiles.push(_healthTile('Temp. PHY',   data.PHY_Temp   + ' °C', _tempColor(data.PHY_Temp)));
+  // Températures (°C) — colorées selon seuil
+  if (data.Board_Temp != null && data.Board_Temp !== '') b.push(_healthBadge('🌡 Carte ' + data.Board_Temp + '°', _tempColor(data.Board_Temp)));
+  if (data.CPU_Temp   != null && data.CPU_Temp   !== '') b.push(_healthBadge('CPU ' + data.CPU_Temp + '°',       _tempColor(data.CPU_Temp)));
+  if (data.PHY_Temp   != null && data.PHY_Temp   !== '') b.push(_healthBadge('PHY ' + data.PHY_Temp + '°',       _tempColor(data.PHY_Temp)));
 
   // Tensions (V)
-  if (data.Board_48V) tiles.push(_healthTile('Tension 48V',  data.Board_48V + ' V'));
-  if (data.Board_24V) tiles.push(_healthTile('Tension 24V',  data.Board_24V + ' V'));
-  if (data.Board_3V)  tiles.push(_healthTile('Tension 3.3V', data.Board_3V  + ' V'));
+  if (data.Board_48V) b.push(_healthBadge('48V ' + data.Board_48V));
+  if (data.Board_24V) b.push(_healthBadge('24V ' + data.Board_24V));
+  if (data.Board_3V)  b.push(_healthBadge('3V3 ' + data.Board_3V));
 
-  // CPU
+  // CPU %
   if (data.CPU_Usage != null && data.CPU_Usage !== '') {
     const cu = parseFloat(data.CPU_Usage);
-    tiles.push(_healthTile('CPU', data.CPU_Usage + ' %', cu >= 90 ? 'var(--red)' : cu >= 70 ? 'var(--amber)' : 'var(--text)'));
+    b.push(_healthBadge('⚙ ' + data.CPU_Usage + '%', cu >= 90 ? 'var(--red)' : cu >= 70 ? 'var(--amber)' : 'var(--text2)'));
   }
 
-  // Ventilateur(s) (RPM)
+  // Ventilateur(s) RPM
   if (Array.isArray(data.Fan_Speeds) && data.Fan_Speeds.length) {
-    tiles.push(_healthTile('Ventilateur', data.Fan_Speeds.join(' / ') + ' RPM'));
+    b.push(_healthBadge('Fan ' + data.Fan_Speeds.join('/')));
   }
 
-  // Consommation PoE totale (somme des Power par port)
+  // Consommation PoE totale
   if (Array.isArray(data.Ports)) {
     const totalPoe = data.Ports.reduce((sum, p) => sum + (parseFloat(p.Power) || 0), 0);
-    if (totalPoe > 0) tiles.push(_healthTile('Conso PoE', totalPoe.toFixed(1) + ' W'));
+    if (totalPoe > 0) b.push(_healthBadge('PoE ' + totalPoe.toFixed(1) + 'W'));
   }
 
   // Uptime
-  if (data.Uptime) tiles.push(_healthTile('Uptime', _fmtUptime(data.Uptime)));
+  if (data.Uptime) b.push(_healthBadge('↑ ' + _fmtUptime(data.Uptime)));
 
-  if (!tiles.length) { card.style.display = 'none'; return; }
-  grid.innerHTML = tiles.join('');
-  card.style.display = '';
+  if (!b.length) { card.style.display = 'none'; return; }
+  grid.innerHTML = b.join('');
+  card.style.display = 'flex';
 }
 
 // ── Push config vers le switch ────────────────────────────────────────────────
