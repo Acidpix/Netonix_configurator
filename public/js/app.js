@@ -91,10 +91,13 @@ async function loadSwitches() {
   }
 }
 
-// Extrait le « numéro » du switch = premier mot du nom (ex « SN-20 Salle » → « SN-20 »).
+// Extrait le « numéro » du switch = préfixe lettres+chiffres, on s'arrête après
+// les chiffres (« SN-20-Salle » → « SN-20 », « SN-023 XYZ » → « SN-023 »).
 function swPrefix(name) {
-  const first = String(name || '').trim().split(/\s+/)[0] || '?';
-  return first.length > 8 ? first.slice(0, 8) : first;
+  const s = String(name || '').trim();
+  const m = s.match(/^[A-Za-z]+-?\d+/);
+  if (m) return m[0];
+  return (s.split(/\s+/)[0] || '?').slice(0, 8);
 }
 
 function renderSidebar() {
