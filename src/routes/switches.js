@@ -91,7 +91,10 @@ router.post('/:id/config', async (req, res) => {
     if (result && result.downgraded && result.downgraded.length) {
       message += ` — PoE non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : rétrogradé automatiquement`;
     }
-    res.json({ ok: true, message, downgraded: (result && result.downgraded) || [] });
+    if (result && result.confirmed === false) {
+      message += ' — ⚠ confirmation anti-revert échouée : le switch risque de rétablir l\'ancienne config';
+    }
+    res.json({ ok: true, message, downgraded: (result && result.downgraded) || [], confirmed: result ? result.confirmed : null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -121,7 +124,10 @@ router.post('/:id/ports', async (req, res) => {
     if (result && result.downgraded && result.downgraded.length) {
       message += ` — PoE non supporté sur le(s) port(s) ${result.downgraded.join(', ')} : rétrogradé automatiquement`;
     }
-    res.json({ ok: true, message, downgraded: (result && result.downgraded) || [] });
+    if (result && result.confirmed === false) {
+      message += ' — ⚠ confirmation anti-revert échouée : le switch risque de rétablir l\'ancienne config';
+    }
+    res.json({ ok: true, message, downgraded: (result && result.downgraded) || [], confirmed: result ? result.confirmed : null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

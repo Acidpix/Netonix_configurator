@@ -497,7 +497,7 @@ async function pushConfig() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     clearConfigDirty();   // modifications poussées avec succès
-    toast(d.message || 'Configuration appliquée !', 'ok');
+    toast(d.message || 'Configuration appliquée !', d.confirmed === false ? 'err' : 'ok');
   } catch (e) {
     toast('Erreur push : ' + e.message, 'err');
   } finally {

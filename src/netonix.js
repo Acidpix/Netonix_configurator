@@ -15,6 +15,12 @@ const sslAgent = new https.Agent({ rejectUnauthorized: !IGNORE_SSL });
 const _sessions  = {};  // { ip: { auth } }
 const _loggingIn = {};  // { ip: Promise<auth> }  — login en cours
 
+// Verrou « apply en cours » : pendant un apply + sa confirmation anti-revert, on
+// INTERDIT tout re-login. Se relogger pendant que la session est encore valide fait
+// planter le firmware Netonix. Un 401 transitoire pendant cette fenêtre est ignoré
+// (réessai avec la même session), jamais traité comme une expiration de token.
+const _applying  = {};  // { ip: true }
+
 function baseUrl(sw) {
   return (sw.https !== false ? 'https' : 'http') + '://' + sw.ip;
 }
@@ -97,7 +103,8 @@ async function get(sw, endpoint, auth) {
     agent   : agent(sw),
     timeout : SWITCH_TIMEOUT,
   });
-  if (res.status === 401) {
+  // Re-login sur 401 UNIQUEMENT hors fenêtre d'apply (sinon on planterait le switch).
+  if (res.status === 401 && !_applying[sw.ip]) {
     invalidateSession(sw.ip);
     auth = await getAuth(sw);
     res  = await fetch(baseUrl(sw) + endpoint, {
@@ -123,7 +130,8 @@ async function post(sw, endpoint, body, auth) {
     });
   };
   var res = await makeReq(auth);
-  if (res.status === 401) {
+  // Re-login sur 401 UNIQUEMENT hors fenêtre d'apply.
+  if (res.status === 401 && !_applying[sw.ip]) {
     invalidateSession(sw.ip);
     auth = await getAuth(sw);
     res  = await makeReq(auth);
@@ -136,6 +144,53 @@ async function post(sw, endpoint, body, auth) {
 async function getConfig(sw) {
   var result = await get(sw, '/api/v1/config');
   return { config: result.data, auth: result.auth };
+}
+
+function _delay(ms) {
+  return new Promise(function (r) { setTimeout(r, ms); });
+}
+
+// Détecte si l'apply Netonix est terminé d'après la réponse de /api/v1/applystatus.
+function _isApplyDone(s) {
+  if (!s || typeof s !== 'object') return false;
+  var result = String(s.result || s.Result || s.Status || s.status || s.State || s.state || '').toLowerCase();
+  if (result && /(ok|done|complete|applied|success|idle|finish|ready)/.test(result)) return true;
+  if (s.Applying === false || s.applying === false) return true;
+  if (s.Done === true || s.done === true || s.Finished === true || s.finished === true) return true;
+  if (typeof s.Progress === 'number' && s.Progress >= 100) return true;
+  if (typeof s.progress === 'number' && s.progress >= 100) return true;
+  return false;
+}
+
+// Confirmation anti-revert : le firmware Netonix arme un revert timer à l'apply et
+// rétablit l'ancienne config après ~60 s si le client ne revient pas prouver que le
+// lien de management a survécu. On poll /api/v1/applystatus avec la session COURANTE.
+//
+// IMPORTANT : on ne se relogue JAMAIS ici (fetch direct, pas via get()). Un re-login
+// pendant une session valide fait planter le switch. Un 401 transitoire ou un blip
+// réseau pendant l'apply → on réessaie tel quel, sans toucher à la session.
+// Renvoie true si l'apply est confirmé, false si le switch a rétabli l'ancienne config.
+async function confirmApply(sw, auth) {
+  var confirmed = false;
+  for (var i = 0; i < 25; i++) {
+    await _delay(600);
+    try {
+      var res = await fetch(baseUrl(sw) + '/api/v1/applystatus?_=' + Date.now(), {
+        headers : auth,
+        agent   : agent(sw),
+        timeout : SWITCH_TIMEOUT,
+      });
+      if (res.status === 401 || !res.ok) continue;  // transitoire → on réessaie, jamais de relogin
+      var s = {};
+      try { s = await res.json(); } catch (e) { continue; }
+      if (s.reverted === true) { confirmed = false; break; }  // le switch a rollback
+      confirmed = true;                                        // client revenu → connectivité prouvée
+      if (_isApplyDone(s)) break;                              // apply terminé → on arrête de poller
+    } catch (e) {
+      // Blip réseau pendant l'apply → on réessaie avec la MÊME session (pas de relogin).
+    }
+  }
+  return confirmed;
 }
 
 function toNativePoe(poe) {
@@ -281,8 +336,17 @@ async function pushConfig(sw, patch) {
     if (k !== 'ports' && k !== 'vlans' && k !== 'allPortsTrunk') merged[k] = patch[k];
   });
   await post(sw, '/api/v1/config', merged, auth);
-  await post(sw, '/api/v1/apply', {}, auth);
-  return { downgraded: downgraded };
+
+  // Fenêtre d'apply : on verrouille pour interdire tout re-login (planterait le switch).
+  _applying[sw.ip] = true;
+  var confirmed;
+  try {
+    await post(sw, '/api/v1/apply', {}, auth);
+    confirmed = await confirmApply(sw, auth);
+  } finally {
+    delete _applying[sw.ip];
+  }
+  return { downgraded: downgraded, confirmed: confirmed };
 }
 
 async function resetConfig(sw, options) {
@@ -299,8 +363,16 @@ async function resetConfig(sw, options) {
     Ports       : config.Ports  || config.ports  || [],
   };
   await post(sw, '/api/v1/config', newConfig, auth);
-  await post(sw, '/api/v1/apply', {}, auth);
-  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address };
+
+  _applying[sw.ip] = true;
+  var confirmed;
+  try {
+    await post(sw, '/api/v1/apply', {}, auth);
+    confirmed = await confirmApply(sw, auth);
+  } finally {
+    delete _applying[sw.ip];
+  }
+  return { hostname: newConfig.Switch_Name, ip: newConfig.IPv4_Address, confirmed: confirmed };
 }
 
 function ping(sw) {

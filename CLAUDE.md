@@ -66,8 +66,9 @@ Documentée dans `src/netonix.js`. Endpoints utilisés :
 | POST | `/api/v1/login` | Auth → cookie `PHPSESSID` ou `session` |
 | GET | `/api/v1/config` | Config JSON complète |
 | POST | `/api/v1/config` | Sauvegarde (merge avec l'existante) |
-| POST | `/api/v1/apply` | Applique la config sauvegardée |
-| GET | `/api/v1/status/30sec` | **Statut temps réel** : `{ Ports: [{ Number, Link: "1G"/"100M-F"/"Down", PoE, Power, ... }], UsageData, ... }` — source du lien (up/vitesse) |
+| POST | `/api/v1/apply` | Applique la config sauvegardée (arme le revert timer ~60 s) |
+| GET | `/api/v1/applystatus` | Poll post-apply = **confirmation anti-revert** (`remaining`/`reverted`) — sans ce poll, le switch rétablit l'ancienne config |
+| GET | `/api/v1/status/30sec` | **Statut temps réel** : `{ Ports: [{ Number, Link: "1G"/"100M-F"/"Down", PoE, Power, ... }], UsageData, ... }` — source du lien (up/vitesse) + capteurs (temp, tensions, fan) |
 | GET | `/api/v1/portdetail?port=N` | Compteurs de trafic d'un port (cumulatifs) |
 
 Les certificats SSL auto-signés sont acceptés via `https.Agent({ rejectUnauthorized: false })`.
@@ -142,7 +143,9 @@ Définis dans `src/presets.js` (serveur) et `public/js/presets.js` (client, mêm
 - Le `resetConfig()` ne garde que `hostname / ip / netmask / gateway` — tout le reste est réécrit
 - **PortSettings VLAN** (chaîne 1 char/port) : `U`=untagged (PVID), `T`=tagged, `E`=exclu. Un port décoché dans l'UI est poussé en `E` (Excluded)
 - **Trunk global** : la case « Tous les ports en trunk » (onglet VLANs) envoie `allPortsTrunk: bool` ; `pushConfig()` met `AllowedVLANs = "1-4096"` (trunk) ou `""` (non trunk) sur tous les ports. Détecté au chargement depuis `AllowedVLANs` des ports
-- **Session** : cache simple par IP (`getAuth`/`_sessions`), un seul login concurrent (déduplication Promise), retry unique sur `401`. Pas de TTL, pas de détection de page de login HTML, pas de poll anti-revert
+- **Session** : cache simple par IP (`getAuth`/`_sessions`), un seul login concurrent (déduplication Promise), retry unique sur `401`. Pas de TTL, pas de détection de page de login HTML
+- **Confirmation anti-revert** : après `POST /api/v1/apply`, `confirmApply()` poll `GET /api/v1/applystatus` (champ `reverted`) pour prouver au switch que le lien de management a survécu — sinon le firmware rétablit l'ancienne config après ~60 s. `pushConfig()`/`resetConfig()` renvoient `confirmed: bool`
+- **⚠ Ne JAMAIS se relogger pendant un apply** : un re-login alors que la session est encore valide fait *planter* le firmware. Le verrou `_applying[ip]` (posé autour de apply+confirmApply) désactive le retry-401 de `get()`/`post()` ; `confirmApply()` fait des `fetch` directs et ignore les 401/erreurs transitoires (réessai même session, jamais de relogin)
 - **PoE par type, par modèle** : `modelsStore.poe_24v_ports` / `poe_48v_ports` / `poe_vh_ports` (plages, ex. `1-4,7`) listent les ports capables de chaque type. `resolvePoeForPort()` (client + serveur) rétrograde un type non supporté vers le type inférieur supporté, sinon Off ; `pushConfig()` renvoie `downgraded: [ports]`. 24V/48V défaut = tous les ports ; 48VH défaut = aucun
 - **Verrou ports HS** : un port dont le nom (description) vaut exactement `HS` est verrouillé côté client (`isPortLocked()` dans ports.js) — preset/drag-drop/édition bloqués et exclus de `buildPortsPayload()` (jamais poussé) tant qu'on n'a pas cliqué « Déverrouiller » (`unlockedPorts`, réinitialisé au changement de switch). Sélection de port = simple (un seul à la fois)
 - `data/switches.json` est dans `.gitignore` — ne jamais le commiter (contient les credentials)
