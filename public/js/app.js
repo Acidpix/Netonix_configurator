@@ -62,6 +62,13 @@ async function init() {
     if (App.currentId && !App.configDirty) fetchConfig(true).catch(function() {});
   }, 60000);
 
+  // Rafraîchissement du statut des liens toutes les 12s (léger, ne touche pas la
+  // config locale → fonctionne même pendant l'édition).
+  setInterval(function() {
+    const sw = App.currentSw;
+    if (App.currentId && sw) loadPortLinkStats(App.currentId, getPortCount(sw.model)).catch(function() {});
+  }, 12000);
+
   // Re-render de la grille de ports au redimensionnement (rotation mobile, etc.)
   let _resizeTimer;
   window.addEventListener('resize', function() {
@@ -149,6 +156,7 @@ async function selectSwitch(id) {
   enableToolbar(true);
   document.getElementById('empty-state').style.display   = 'none';
   document.getElementById('ports-section').style.display = 'block';
+  document.getElementById('sw-health-card').style.display = 'none';  // masque les capteurs du switch précédent
 
   resetPortStates();
   renderPortGrid(getPortCount(sw.model));
@@ -245,17 +253,8 @@ async function fetchConfig(silent = false) {
         portStates[portNum]       = raw.enabled === false ? 'disabled' : (detected === null ? 'unknown' : detected);
         portDescriptions[portNum] = raw.description;
         portRawConfigs[portNum]   = raw;
-
-        // Si la config inclut un statut de lien (certaines versions firmware)
-        var cfgLink  = portObj.Link  || portObj.link  || portObj.Status || portObj.link_status || '';
-        var cfgSpeed = portObj.Speed || portObj.speed || portObj.Link_Speed || '';
-        if (cfgLink || cfgSpeed) {
-          var ls = String(cfgLink).toLowerCase();
-          var lu = ls === 'up' || ls === 'connected' || ls === 'active' || String(cfgSpeed) !== '';
-          var ss = String(cfgSpeed).toLowerCase();
-          var sp = ss.includes('1000') || ss === '1g' ? 1000 : ss.includes('100') ? 100 : ss.includes('10') ? 10 : parseInt(ss) || 0;
-          portLinkStats[portNum] = { up: lu, speed: sp };
-        }
+        // Le statut de lien n'est pas dans la config : il est chargé séparément
+        // via loadPortLinkStats() (GET /api/v1/status/30sec).
       });
 
       // Détecte l'état trunk global : tous les ports ont AllowedVLANs non vide
@@ -361,79 +360,111 @@ async function saveSwInfo() {
 
 // ── Stats de lien par port ────────────────────────────────────────────────
 
-// Parse une vitesse texte/num ("1G", "1000Mbps", 1000…) → Mbps
-function _parseSpeed(raw) {
-  const s = String(raw == null ? '' : raw).toLowerCase();
-  if (s.includes('1000') || s === '1g' || s === '1gbps') return 1000;
-  if (s.includes('100')  && !s.includes('1000'))         return 100;
-  if (s.includes('10')   && !s.includes('100'))          return 10;
-  return parseInt(s.replace(/[^\d]/g, '')) || 0;
-}
-
-// Interprète un champ "link" hétérogène (bool, "Up"/"Down", "connected"…) → true/false/null
-function _parseLinkUp(v) {
-  if (v === true)  return true;
-  if (v === false) return false;
-  const s = String(v == null ? '' : v).toLowerCase().trim();
-  if (s === 'up' || s === 'connected' || s === 'active' || s === '1' || s === 'true' || s === 'yes') return true;
-  if (s === 'down' || s === 'disconnected' || s === 'inactive' || s === '0' || s === 'false' || s === 'no' || s === '') return false;
-  return null;
-}
-
-// Extrait { up, speed } d'une entrée de port, quelle que soit la convention de nommage
-function _extractPortLink(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const up = _parseLinkUp(
-    entry.Link ?? entry.link ?? entry.LinkUp ?? entry.link_up ??
-    entry.Status ?? entry.status ?? entry.Up ?? entry.up ?? entry.Connected ?? entry.connected
-  );
-  if (up === null) return null;
-  const speed = _parseSpeed(
-    entry.Speed ?? entry.speed ?? entry.LinkSpeed ?? entry.link_speed ??
-    entry.Link_Speed ?? entry.Rate ?? entry.rate ?? ''
-  );
-  return { up, speed };
+// Interprète le champ Link Netonix ("1G" / "100M-F" / "10M-H" / "Down") → { up, speed Mbps }
+function parseLinkField(link) {
+  const s = String(link == null ? '' : link).toLowerCase().trim();
+  if (!s || s === 'down' || s === 'no' || s === 'none') return { up: false, speed: 0 };
+  let speed = 0;
+  if (s.includes('10g'))       speed = 10000;
+  else if (s.includes('1g'))   speed = 1000;
+  else if (s.includes('100m')) speed = 100;
+  else if (s.includes('10m'))  speed = 10;
+  return { up: true, speed };
 }
 
 async function loadPortLinkStats(switchId, portCount) {
-  // On interroge l'endpoint de statut temps réel (découvert par le backend).
-  // Les compteurs de trafic NE sont PAS utilisés : ils sont cumulatifs et donnent
-  // de faux "lien actif" sur des ports débranchés ayant déjà eu du trafic.
+  // Statut temps réel via GET /api/v1/status/30sec (proxifié par /linkstatus).
+  // data.Ports = [{ Number, Link: "1G"|"100M-F"|"Down", PoE, Power, ... }]
+  // + capteurs système (Board_Temp, CPU_Temp, Board_48V, Fan_Speeds, Uptime…)
   try {
     const r = await fetch(`/api/switches/${switchId}/linkstatus`);
     if (!r.ok) return;
-    const { endpoint, data } = await r.json();
+    const data = await r.json();
     if (App.currentId !== switchId) return;
-    if (!data) { console.warn('[linkstatus] aucun endpoint de statut trouvé sur le switch'); return; }
 
-    console.log('[linkstatus] endpoint =', endpoint, data);
-
-    // Localise le tableau de ports dans la réponse (conventions variables)
-    let ports = Array.isArray(data) ? data
-              : data.Ports || data.ports || data.PortStatus || data.port_status
-              || data.Port || data.port || null;
-
+    const ports = data && data.Ports;
     if (Array.isArray(ports)) {
-      ports.forEach((entry, idx) => {
-        const num = parseInt(entry.Number ?? entry.number ?? entry.Port ?? entry.port ?? entry.Index ?? (idx + 1));
+      ports.forEach(p => {
+        const num = parseInt(p.Number ?? p.number ?? p.Port ?? p.port);
         if (!num || num > portCount) return;
-        const link = _extractPortLink(entry);
-        if (link) portLinkStats[num] = link;
+        portLinkStats[num] = parseLinkField(p.Link ?? p.link);
       });
-    } else if (ports && typeof ports === 'object') {
-      // Map { "1": {...}, "2": {...} }
-      Object.keys(ports).forEach(k => {
-        const num = parseInt(k);
-        if (!num || num > portCount) return;
-        const link = _extractPortLink(ports[k]);
-        if (link) portLinkStats[num] = link;
-      });
+      renderPortGrid(portCount);
     }
 
-    renderPortGrid(portCount);
+    renderSystemStatus(data);
   } catch (e) {
     console.warn('[linkstatus]', e.message);
   }
+}
+
+// ── État système (capteurs) ───────────────────────────────────────────────────
+
+function _fmtUptime(seconds) {
+  let s = Math.floor(parseFloat(seconds) || 0);
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600);  s -= h * 3600;
+  const m = Math.floor(s / 60);
+  if (d > 0) return `${d}j ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function _tempColor(t) {
+  const v = parseFloat(t);
+  if (isNaN(v)) return 'var(--text)';
+  if (v >= 75) return 'var(--red)';
+  if (v >= 60) return 'var(--amber)';
+  return 'var(--green)';
+}
+
+function _healthTile(label, value, color) {
+  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px">
+    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${label}</div>
+    <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:${color || 'var(--text)'}">${value}</div>
+  </div>`;
+}
+
+function renderSystemStatus(data) {
+  const card = document.getElementById('sw-health-card');
+  const grid = document.getElementById('health-grid');
+  if (!card || !grid || !data) return;
+
+  const tiles = [];
+
+  // Températures (°C)
+  if (data.Board_Temp != null && data.Board_Temp !== '') tiles.push(_healthTile('Temp. carte', data.Board_Temp + ' °C', _tempColor(data.Board_Temp)));
+  if (data.CPU_Temp   != null && data.CPU_Temp   !== '') tiles.push(_healthTile('Temp. CPU',   data.CPU_Temp   + ' °C', _tempColor(data.CPU_Temp)));
+  if (data.PHY_Temp   != null && data.PHY_Temp   !== '') tiles.push(_healthTile('Temp. PHY',   data.PHY_Temp   + ' °C', _tempColor(data.PHY_Temp)));
+
+  // Tensions (V)
+  if (data.Board_48V) tiles.push(_healthTile('Tension 48V',  data.Board_48V + ' V'));
+  if (data.Board_24V) tiles.push(_healthTile('Tension 24V',  data.Board_24V + ' V'));
+  if (data.Board_3V)  tiles.push(_healthTile('Tension 3.3V', data.Board_3V  + ' V'));
+
+  // CPU
+  if (data.CPU_Usage != null && data.CPU_Usage !== '') {
+    const cu = parseFloat(data.CPU_Usage);
+    tiles.push(_healthTile('CPU', data.CPU_Usage + ' %', cu >= 90 ? 'var(--red)' : cu >= 70 ? 'var(--amber)' : 'var(--text)'));
+  }
+
+  // Ventilateur(s) (RPM)
+  if (Array.isArray(data.Fan_Speeds) && data.Fan_Speeds.length) {
+    tiles.push(_healthTile('Ventilateur', data.Fan_Speeds.join(' / ') + ' RPM'));
+  }
+
+  // Consommation PoE totale (somme des Power par port)
+  if (Array.isArray(data.Ports)) {
+    const totalPoe = data.Ports.reduce((sum, p) => sum + (parseFloat(p.Power) || 0), 0);
+    if (totalPoe > 0) tiles.push(_healthTile('Conso PoE', totalPoe.toFixed(1) + ' W'));
+  }
+
+  // Uptime
+  if (data.Uptime) tiles.push(_healthTile('Uptime', _fmtUptime(data.Uptime)));
+
+  if (!tiles.length) { card.style.display = 'none'; return; }
+  grid.innerHTML = tiles.join('');
+  card.style.display = '';
 }
 
 // ── Push config vers le switch ────────────────────────────────────────────────

@@ -328,31 +328,11 @@ async function portStats(sw, portNum) {
   return (data && typeof data === 'object' && data.PortDetail) ? data.PortDetail : data;
 }
 
-// Endpoints candidats exposant le statut de lien temps réel (varie selon firmware).
-// Le premier qui répond du JSON exploitable gagne ; on mémorise lequel par IP.
-var _LINK_ENDPOINTS = ['/api/v1/status', '/api/v1/devicestatus', '/api/v1/portstatus', '/api/v1/ports'];
-var _linkEndpointFor = {};  // { ip: endpoint qui marche }
-
+// Statut temps réel : GET /api/v1/status/30sec renvoie { Ports: [{ Number, Link, PoE, Power, ... }], ... }
+// Le champ Link vaut "1G" / "100M-F" / "10M-H" / "Down" (suffixe -F/-H = full/half duplex).
 async function linkStatus(sw) {
-  var auth = await getAuth(sw);
-
-  // Ordonne pour essayer en premier l'endpoint déjà connu pour cette IP
-  var endpoints = _LINK_ENDPOINTS.slice();
-  if (_linkEndpointFor[sw.ip]) {
-    endpoints = [_linkEndpointFor[sw.ip]].concat(endpoints.filter(function (e) { return e !== _linkEndpointFor[sw.ip]; }));
-  }
-
-  for (var i = 0; i < endpoints.length; i++) {
-    try {
-      var r = await get(sw, endpoints[i] + '?_=' + Date.now(), auth);
-      auth = r.auth;
-      if (r.data && typeof r.data === 'object') {
-        _linkEndpointFor[sw.ip] = endpoints[i];
-        return { endpoint: endpoints[i], data: r.data };
-      }
-    } catch (e) { /* endpoint absent → on essaie le suivant */ }
-  }
-  return { endpoint: null, data: null };
+  var result = await get(sw, '/api/v1/status/30sec?_=' + Date.now());
+  return result.data;
 }
 
 function detectModel(config, models) {

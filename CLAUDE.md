@@ -66,9 +66,9 @@ Documentée dans `src/netonix.js`. Endpoints utilisés :
 | POST | `/api/v1/login` | Auth → cookie `PHPSESSID` ou `session` |
 | GET | `/api/v1/config` | Config JSON complète |
 | POST | `/api/v1/config` | Sauvegarde (merge avec l'existante) |
-| POST | `/api/v1/apply` | Applique la config sauvegardée (arme le revert timer) |
-| GET | `/api/v1/applystatus` | Poll post-apply = **confirmation anti-revert** — sans ce poll, le switch rétablit l'ancienne config après ~60 s |
-| GET | `/api/v1/portdetail?port=N` | Stats temps réel |
+| POST | `/api/v1/apply` | Applique la config sauvegardée |
+| GET | `/api/v1/status/30sec` | **Statut temps réel** : `{ Ports: [{ Number, Link: "1G"/"100M-F"/"Down", PoE, Power, ... }], UsageData, ... }` — source du lien (up/vitesse) |
+| GET | `/api/v1/portdetail?port=N` | Compteurs de trafic d'un port (cumulatifs) |
 
 Les certificats SSL auto-signés sont acceptés via `https.Agent({ rejectUnauthorized: false })`.
 
