@@ -71,7 +71,7 @@ body::before {
 .sw-dot.offline { background: var(--red); }
 .sw-dot.pending { background: var(--amber); animation: blink 1s infinite; }
 /* Badge « numéro » du switch (préfixe du nom), coloré selon le statut */
-.sw-badge { flex-shrink: 0; min-width: 40px; padding: 4px 6px; border-radius: 5px; font-family: var(--mono); font-size: 10px; font-weight: 700; text-align: center; color: #fff; background: var(--text3); transition: background .3s; }
+.sw-badge { flex-shrink: 0; min-width: 44px; padding: 4px 7px; border-radius: 5px; font-family: var(--font); font-size: 12px; font-weight: 700; letter-spacing: .02em; text-align: center; color: #fff; background: var(--text3); transition: background .3s; }
 .sw-badge.online  { background: var(--green); }
 .sw-badge.offline { background: var(--red); }
 .sw-badge.pending { background: var(--amber); animation: blink 1s infinite; }

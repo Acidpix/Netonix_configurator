@@ -583,10 +583,16 @@ function openTaggedPicker(event, portNum) {
   }
 
   picker.innerHTML = `
-    <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">VLANs taggés</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+      <span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">VLANs taggés</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn btn-ghost" style="flex:1;font-size:10px;padding:3px 6px" onclick="setAllTaggedVlans(${portNum},true)">Tout cocher</button>
+      <button class="btn btn-ghost" style="flex:1;font-size:10px;padding:3px 6px" onclick="setAllTaggedVlans(${portNum},false)">Tout décocher</button>
+    </div>
     ${vlanList.map(v => `
       <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)">
-        <input type="checkbox" style="width:auto;flex-shrink:0" ${tagged.includes(v.id) ? 'checked' : ''}
+        <input type="checkbox" data-vlan="${v.id}" style="width:auto;flex-shrink:0" ${tagged.includes(v.id) ? 'checked' : ''}
           onchange="toggleTaggedVlan(${portNum},${v.id},this.checked)" />
         <span style="font-family:var(--mono);color:var(--text3);font-size:11px;min-width:28px">${v.id}</span>
         <span style="color:var(--text)">${v.name}</span>
@@ -625,7 +631,25 @@ function toggleTaggedVlan(portNum, vlanId, checked) {
   else if (!checked) tagged = tagged.filter(v => v !== vlanId);
   portRawConfigs[portNum].tagged = tagged.sort((a, b) => a - b);
   updatePortField(portNum, 'tagged', portRawConfigs[portNum].tagged);
-  // Mettre à jour le label du bouton sans fermer le picker
+  _updateTaggedBtnLabel(portNum);
+}
+
+// Coche ou décoche tous les VLANs taggés du port d'un seul coup.
+function setAllTaggedVlans(portNum, checked) {
+  if (!portRawConfigs[portNum]) {
+    portRawConfigs[portNum] = { enabled: true, poe: false, pvid: 1, tagged: [], stp: false, storm_control: false, qos: false, description: '' };
+  }
+  const vlanList = typeof getVlans === 'function' ? getVlans() : [];
+  portRawConfigs[portNum].tagged = checked ? vlanList.map(v => v.id).sort((a, b) => a - b) : [];
+  updatePortField(portNum, 'tagged', portRawConfigs[portNum].tagged);
+  _updateTaggedBtnLabel(portNum);
+
+  // Reflète l'état sur les cases du picker sans le fermer
+  const picker = document.getElementById('vlan-tagged-picker');
+  if (picker) picker.querySelectorAll('input[type=checkbox][data-vlan]').forEach(cb => { cb.checked = checked; });
+}
+
+function _updateTaggedBtnLabel(portNum) {
   const btn = document.getElementById('tagged-btn-' + portNum);
   if (btn) btn.textContent = portRawConfigs[portNum].tagged.length
     ? formatRanges(portRawConfigs[portNum].tagged)
