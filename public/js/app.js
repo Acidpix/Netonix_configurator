@@ -5,6 +5,7 @@ window.App = {
   switches  : [],
   currentId : null,
   configDirty: false,   // modifications locales non poussées → suspend l'auto-refresh
+  sortMode  : localStorage.getItem('sortMode') || 'switch',  // 'switch' | 'location'
   get currentSw() { return this.switches.find(s => s.id === this.currentId) || null; },
 };
 
@@ -52,6 +53,8 @@ function closeSidebar() {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function init() {
   applyStoredTheme();
+  const sortBtn = document.getElementById('btn-sort');
+  if (sortBtn) sortBtn.textContent = App.sortMode === 'switch' ? '⇅ Tri : N° switch' : '⇅ Tri : Localisation';
   await Promise.all([initPresets(), initModels(), initVlanPresets()]);
   renderVlanPresetButtons();
   await loadSwitches();
@@ -100,6 +103,26 @@ function swPrefix(name) {
   return (s.split(/\s+/)[0] || '?').slice(0, 8);
 }
 
+// Clé de tri selon le mode choisi. Les valeurs vides sont renvoyées en fin de liste.
+function _sortKey(sw) {
+  if (App.sortMode === 'location') return String(sw.location || '￿');
+  return swPrefix(sw.name) || '￿';
+}
+
+// Tri « naturel » : SN-2 < SN-10, « 9 - Bar » < « 10 - WC »
+function _sortSwitches(arr) {
+  return arr.slice().sort((a, b) =>
+    _sortKey(a).localeCompare(_sortKey(b), undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+function toggleSortMode() {
+  App.sortMode = App.sortMode === 'switch' ? 'location' : 'switch';
+  localStorage.setItem('sortMode', App.sortMode);
+  const btn = document.getElementById('btn-sort');
+  if (btn) btn.textContent = App.sortMode === 'switch' ? '⇅ Tri : N° switch' : '⇅ Tri : Localisation';
+  renderSidebar();
+}
+
 function renderSidebar() {
   const groups = {};
   App.switches.forEach(sw => {
@@ -119,7 +142,7 @@ function renderSidebar() {
     lbl.textContent = grp;
     list.appendChild(lbl);
 
-    items.forEach(sw => {
+    _sortSwitches(items).forEach(sw => {
       const item = document.createElement('div');
       item.className = 'sw-item' + (sw.id === App.currentId ? ' active' : '');
       item.id = `sw-item-${sw.id}`;

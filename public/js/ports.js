@@ -669,6 +669,7 @@ function showPortDetail(key, ports) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="font-size:18px">🔒</span>
         <span style="font-weight:600;font-size:13px;color:var(--amber)">Port ${portNum} — Hors service (HS)</span>
+        <button class="detail-close" style="margin-left:auto" onclick="clearPortSelection()" title="Fermer">✕</button>
       </div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
         Ce port est marqué <b>HS</b> et verrouillé pour éviter toute modification accidentelle.
@@ -718,6 +719,7 @@ function showPortDetail(key, ports) {
       <span class="preset-dot" style="background:${color};width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0"></span>
       <span style="font-weight:600;font-size:13px">${label} — Port ${portNum}</span>
       <span style="margin-left:auto">${linkHtml}</span>
+      <button class="detail-close" onclick="clearPortSelection()" title="Fermer">✕</button>
     </div>
 
     <div class="detail-row" style="align-items:center">
@@ -769,7 +771,10 @@ function showMultiPortDetail(ports) {
   const panel = document.getElementById('detail-panel');
   panel.style.display = 'block';
   panel.innerHTML = `
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px">${ports.length} ports sélectionnés : ${ports.join(', ')}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-weight:600;font-size:13px">${ports.length} ports sélectionnés : ${ports.join(', ')}</span>
+      <button class="detail-close" style="margin-left:auto" onclick="clearPortSelection()" title="Fermer">✕</button>
+    </div>
     <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Choisissez un preset pour les configurer tous simultanément.</div>
     <button class="btn btn-ghost" onclick="clearPortSelection()" style="font-size:11px">Désélectionner</button>
   `;
